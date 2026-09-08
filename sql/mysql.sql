@@ -179,3 +179,75 @@ CREATE TABLE IF NOT EXISTS `pre_gestion_bdconex`.`tn_gestion_bdconex` (
 INSERT INTO `pre_gestion_bdconex`.`tn_gestion_bdconex` (`idCliente`, `nombreBaseDeDatos`, `usuario`, `contrasena`, `motor`, `hosting`, `puerto`, `tipoDeBaseDeDatos`)
 VALUES (20001, 'producto9_base', 'root', '', 'mysql', 'host.docker.internal', 3306, 'mysql')
 ON DUPLICATE KEY UPDATE `nombreBaseDeDatos`='producto9_base', `hosting`='host.docker.internal';
+
+-- 2026-09-97
+-- Configuración Branding de credenciales (Configure la identidad visual aplicada a las credenciales)
+CREATE TABLE tn_tarjetavirtual_tipos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(100) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO tn_tarjetavirtual_tipos(nombre) VALUES 
+("Contadores"),
+("Sociedades");
+
+CREATE TABLE tn_tarjetavirtual_configuracion_branding (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    idCliente INT(11) NOT NULL,
+
+    version_actual INT UNSIGNED NOT NULL DEFAULT 1,
+    version_publicada INT UNSIGNED NULL,
+
+    logo VARCHAR(500) NULL,
+    color_fondo VARCHAR(20) NOT NULL,
+    color_letra VARCHAR(20) NOT NULL,
+    fuente_letra VARCHAR(100) NOT NULL,
+
+    usuario_creacion_id int NULL,
+    usuario_actualizacion_id int NULL,
+    tipo_id INT NOT NULL,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_configuracion_branding_tipo
+        FOREIGN KEY (tipo_id) 
+        REFERENCES tn_tarjetavirtual_tipos(id),
+
+    CONSTRAINT fk_configuracion_branding_usuario_creacion
+        FOREIGN KEY(usuario_creacion_id) REFERENCES tn_user_lst(id),
+
+    CONSTRAINT fk_configuracion_branding_usuario_actualizacion
+        FOREIGN KEY(usuario_actualizacion_id) REFERENCES tn_user_lst(id)
+
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE tn_tarjetavirtual_configuracion_branding_historico (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    idCliente INT(11) NOT NULL,
+
+    configuracion_branding_id INT UNSIGNED NOT NULL,
+    version INT UNSIGNED NOT NULL,
+
+    logo VARCHAR(500) NULL,
+    color_fondo VARCHAR(20) NOT NULL,
+    color_letra VARCHAR(20) NOT NULL,
+    fuente_letra VARCHAR(100) NOT NULL,
+
+    usuario_creacion_id int NULL,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_branding_historico_configuracion
+        FOREIGN KEY (configuracion_branding_id)
+        REFERENCES tn_tarjetavirtual_configuracion_branding(id),
+
+    CONSTRAINT fk_branding_historico_configuracion_usuario
+        FOREIGN KEY (usuario_creacion_id)
+        REFERENCES tn_user_lst(id),
+
+    UNIQUE KEY uk_branding_version (
+        configuracion_branding_id,
+        version
+    )
+)ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
