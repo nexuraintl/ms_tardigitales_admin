@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from fastapi import HTTPException
 from app.repositories.tarjetas_repository import TarjetasRepository
-from app.schemas.tarjetas_schema import TarjetaCreateSchema, ValidadorConfigSchema, ConsultaMatriculaResponseSchema
+from app.schemas.tarjetas_schema import TarjetaCreateSchema, ValidadorConfigSchema, BrandingCredentialsCreateSchema, BrandingCredentialsUpdateSchema, ConsultaMatriculaResponseSchema
 from app.integrations.jcc_client import JccClient
 
 class TarjetasService:
@@ -127,3 +127,117 @@ class TarjetasService:
                 detail="No fue posible guardar la configuración del validador (MS-3851)."
             )
 
+
+    async def create_branding_credentials(self, data: BrandingCredentialsCreateSchema, client_id: Optional[int] = None) -> Dict[str, Any]:
+        try:
+            new_id = await self.repository.create_branding_credentials(data.dict(), client_id)
+            return {
+                "id": new_id,
+                "status": "success",
+                "message": "Branding credencial creada exitosamente."
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[TarjetasService] Error al crear Branding credencial: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="No fue posible completar la creacion del Brading credencial (MS-3852)."
+            )
+
+    async def update_branding_credentials(self, branding_credential_id: int, data: BrandingCredentialsUpdateSchema, client_id: Optional[int] = None) -> Dict[str, Any]:
+        try:
+            existing = await self.repository.get_by_id_branding_credencials(branding_credential_id, client_id)
+            if not existing:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Branding credencial con ID {branding_credential_id} no encontrado (MS-3853)."
+                )
+
+        
+            await self.repository.update_branding_credentials(
+                branding_credential_id, 
+                data.dict(exclude_none=True), 
+                client_id
+            )
+        
+            updated = await self.repository.get_by_id_branding_credencials(branding_credential_id, client_id)
+        
+            return {
+                "id": branding_credential_id,
+                "status": "success",
+                "message": "Branding credencial actualizado exitosamente."
+            }
+    
+        except HTTPException:
+            raise
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            print(f"[TarjetasService] Error al actualizar Branding credencial {branding_credential_id}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="No fue posible actualizar la información del branding (MS-3854)."
+            )
+
+    async def update_branding_credentials_change_version(self, branding_credential_id: int, data: BrandingCredentialsUpdateSchema,  client_id: Optional[int] = None) -> Dict[str, Any]:
+        try:
+            existing = await self.repository.get_by_id_branding_credencials(branding_credential_id, client_id)
+            if not existing:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Branding credencial con ID {branding_credential_id} no encontrado (MS-3857)."
+                )
+            
+            await self.repository.update_branding_credentials_change_version(
+                branding_credential_id,
+                data.dict(exclude_none=True), 
+                client_id
+            )
+                        
+            return {
+                "id": branding_credential_id,
+                "status": "success",
+                "message": "Versión publicada actualizada exitosamente."
+            }
+            
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[TarjetasService] Error al actualizar versión publicada {branding_credential_id}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="No fue posible actualizar la versión publicada del branding (MS-3856)."
+            )
+
+    async def get_branding_credentials(self, branding_credential_id: int, client_id: Optional[int] = None) -> Dict[str, Any]:
+        try:
+            result = await self.repository.get_by_id_branding_credencials(branding_credential_id, client_id)
+            if not result:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Branding credencial con ID {branding_credential_id} no encontrado."
+                )
+            return result
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[TarjetasService] Error al obtener Branding credencial {branding_credential_id}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="No fue posible obtener la información del branding (MS-3855)."
+            )
+
+    async def list_history_branding_credentials(self, branding_credential_id: int, client_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        try:
+            return await self.repository.list_history_branding_credentials(branding_credential_id, client_id)
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[TarjetasService] Error al obtener el historial de versiones de Branding de credenciales {branding_credential_id}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="No fue posible obtener el historial de versiones de Branding de credenciales (MS-3854)."
+            )

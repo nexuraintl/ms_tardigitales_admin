@@ -31,3 +31,23 @@ class ConsultaMatriculaResponseSchema(BaseModel):
     pdf: Optional[str] = None
     encontrado: bool = False
 
+
+class BrandingCredentialsCreateSchema(BaseModel):
+    idCliente: int = Field(..., description="ID del cliente es requerido")
+    version_actual: int = Field(1, description="Versión actual")
+    version_publicada: Optional[int] = None
+    logo: Optional[str] = None
+    color_fondo: str = Field(..., description="Color de fondo es requerido") 
+    color_letra: str = Field(..., description="Color de letra es requerido") 
+    fuente_letra: str = Field(..., description="Fuente es requerida") 
+    usuario_creacion_id: int = Field(80, description="ID del usuario creador")
+    usuario_actualizacion_id: Optional[int] = None
+    tipo_id: int = Field(..., description="ID del tipo es requerido")
+
+class BrandingCredentialsUpdateSchema(BaseModel):
+    version_publicada: Optional[int] = None
+    logo: Optional[str] = None
+    color_fondo: Optional[str] = None
+    color_letra: Optional[str] = None
+    fuente_letra: Optional[str] = None
+    usuario_actualizacion_id: Optional[int] = None
