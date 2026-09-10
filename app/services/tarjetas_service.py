@@ -188,12 +188,7 @@ class TarjetasService:
         tipo_tarjeta: str = "contadores",
     ) -> Dict[str, Any]:
         try:
-
-            print(f"[DEBUG] documento={documento}")
-            print(f"[DEBUG] tipo_tarjeta={tipo_tarjeta}")
-            print(f"[DEBUG] tipo {tipo}")
-            print(f"[DEBUG] client_id {client_id}")
-
+            
             consulta = await self.jcc_client.consultar_registro(
                 documento=documento,
                 tipo_tarjeta=tipo_tarjeta,

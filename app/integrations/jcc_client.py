@@ -25,9 +25,6 @@ class JccClient:
         if not documento_limpio:
             return {"disponibles": [], "pdf": None, "encontrado": False, "error": "Documento vacío"}
 
-
-        documento_limpio = ""
-
         if tipo_tarjeta == "sociedades":
             url = f"{JCC_API_BASE_URL}/sociedades/"
             payload = {
