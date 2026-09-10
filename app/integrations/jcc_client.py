@@ -11,8 +11,11 @@ JCC_API_BEARER_TOKEN = os.getenv(
 
 class JccClient:
 
-    @staticmethod
-    async def consultar_registro(documento: str, tipo_tarjeta: str = "contadores", tipo: str = "") -> Dict[str, Any]:
+    def __init__(self):
+        self.last_url: str = ""
+        self.last_metodo: str = "POST"
+
+    async def consultar_registro(self, documento: str, tipo_tarjeta: str = "contadores", tipo: str = "") -> Dict[str, Any]:
         """
         Consulta la API institucional de la Junta Central de Contadores
         para obtener los datos oficiales del expediente / matrícula.
@@ -36,6 +39,9 @@ class JccClient:
                 "documento": documento_limpio,
                 "cambiarEstado": False
             }
+
+        self.last_url = url
+        self.last_metodo = "POST"
 
         headers = {
             "Authorization": f"Bearer {JCC_API_BEARER_TOKEN}",
