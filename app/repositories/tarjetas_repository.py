@@ -1,4 +1,6 @@
 import aiomysql
+import json
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 from app.core.database import get_client_connection
 
@@ -218,6 +220,27 @@ class TarjetasRepository:
         finally:
             conn.close()
 
+    #Buscar por tipo y cliente
+    async def get_by_cliente_and_tipo(self, id_cliente: int, tipo_id: int, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    """
+                    SELECT
+                        id, idCliente, version_actual, version_publicada,
+                        logo, color_fondo, color_letra, fuente_letra,
+                        usuario_creacion_id, tipo_id
+                    FROM tn_tarjetavirtual_configuracion_branding
+                    WHERE idCliente = %s AND tipo_id = %s
+                    LIMIT 1
+                    """,
+                    (id_cliente, tipo_id),
+                )
+                return await cursor.fetchone()
+        finally:
+            conn.close()
+
     async def create_branding_credentials(self, branding_credencials_data: Dict[str, Any], client_id: Optional[int] = None) -> int:
         conn = await get_client_connection(client_id)
         cursor = None
@@ -229,9 +252,8 @@ class TarjetasRepository:
                 """
                 INSERT INTO tn_tarjetavirtual_configuracion_branding (
                     idCliente, version_actual, version_publicada, logo, color_fondo,
-                    color_letra, fuente_letra, usuario_creacion_id, usuario_actualizacion_id,
-                    tipo_id
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    color_letra, fuente_letra, usuario_creacion_id,tipo_id
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     client_id,
@@ -242,7 +264,6 @@ class TarjetasRepository:
                     branding_credencials_data.get("color_letra"),
                     branding_credencials_data.get("fuente_letra"),
                     branding_credencials_data.get("usuario_creacion_id"),
-                    branding_credencials_data.get("usuario_actualizacion_id"),
                     branding_credencials_data.get("tipo_id")
                 )
             )
@@ -297,8 +318,7 @@ class TarjetasRepository:
                         color_fondo,
                         color_letra,
                         fuente_letra,
-                        usuario_creacion_id,
-                        usuario_actualizacion_id
+                        usuario_creacion_id
                     FROM tn_tarjetavirtual_configuracion_branding
                     WHERE id = %s
                     LIMIT 1
@@ -307,6 +327,37 @@ class TarjetasRepository:
                 )
                 row = await cursor.fetchone()
                 return row
+        finally:
+            conn.close()
+
+    async def get_branding_credentials_publish(self, branding_credential_id: int, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    """
+                    SELECT
+                        tcbh.logo,
+                        tcbh.color_fondo,
+                        tcbh.color_letra,
+                        tcbh.fuente_letra
+                    FROM tn_tarjetavirtual_configuracion_branding_historico tcbh
+                    INNER JOIN tn_tarjetavirtual_configuracion_branding ttc
+                        ON ttc.id = tcbh.configuracion_branding_id
+                        AND ttc.version_publicada = tcbh.version
+                    WHERE tcbh.configuracion_branding_id = %s
+                    ORDER BY tcbh.version DESC
+                    LIMIT 1
+                    """,
+                    (branding_credential_id,)
+                )
+                
+                row = await cursor.fetchone()
+                return row
+                
+        except Exception as e:
+            print(f"Error al obtener branding publicado: {e}")
+            return None
         finally:
             conn.close()
 
@@ -329,16 +380,8 @@ class TarjetasRepository:
             
             current_version = result[0]
             new_version = current_version + 1
-            
-            usuario_actualizacion = update_data.get("usuario_actualizacion_id")
-            if not usuario_actualizacion:
-                await cursor.execute(
-                    "SELECT usuario_creacion_id FROM tn_tarjetavirtual_configuracion_branding WHERE id = %s",
-                    (branding_id,)
-                )
-                user_result = await cursor.fetchone()
-                usuario_actualizacion = user_result[0] if user_result else None
-            
+            usuario_creacion = update_data.get("usuario_creacion_id")
+                        
             await cursor.execute(
                 """
                 UPDATE tn_tarjetavirtual_configuracion_branding 
@@ -347,8 +390,7 @@ class TarjetasRepository:
                     logo = COALESCE(%s, logo),
                     color_fondo = COALESCE(%s, color_fondo),
                     color_letra = COALESCE(%s, color_letra),
-                    fuente_letra = COALESCE(%s, fuente_letra),
-                    usuario_actualizacion_id = %s
+                    fuente_letra = COALESCE(%s, fuente_letra)
                 WHERE id = %s
                 """,
                 (
@@ -358,7 +400,6 @@ class TarjetasRepository:
                     update_data.get("color_fondo"),
                     update_data.get("color_letra"),
                     update_data.get("fuente_letra"),
-                    usuario_actualizacion,
                     branding_id
                 )
             )
@@ -374,7 +415,7 @@ class TarjetasRepository:
                 FROM tn_tarjetavirtual_configuracion_branding
                 WHERE id = %s
                 """,
-                (new_version, usuario_actualizacion, branding_id)
+                (new_version, usuario_creacion, branding_id)
             )
             
             await cursor.execute("COMMIT")
@@ -423,13 +464,11 @@ class TarjetasRepository:
                     UPDATE tn_tarjetavirtual_configuracion_branding
                     SET 
                         version_publicada = %s,
-                        usuario_actualizacion_id = %s,
                         updated_at = NOW()
                     WHERE id = %s
                     """,
                     (
                         data.get('version_publicada'),
-                        data.get('usuario_actualizacion_id'),
                         branding_id
                     )
                 )
@@ -473,5 +512,212 @@ class TarjetasRepository:
                     (branding_id,)
                 )
                 return await cursor.fetchall()
+        finally:
+            conn.close()
+
+    async def create_contadores(self, data: Dict[str, Any], client_id: Optional[int] = None) -> int:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cursor:
+                query = """
+                    INSERT INTO tn_tarjetavirtual_contadores (
+                        no_tarjeta,
+                        nombres,
+                        primer_apellido,
+                        segundo_apellido,
+                        no_expd,
+                        tipo_documento,
+                        no_documento,
+                        universidad,
+                        estado_contador,
+                        resolucion,
+                        fecha_estado,
+                        fecha_radicacion,
+                        fecha_resolucion,
+                        acta_jcc,
+                        fecha_grado,
+                        seccional,
+                        fecha_emision,
+                        tipo_asociado_id,
+                        estado_tarjeta_id
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                """
+                
+                values = (
+                    data.get("no_tarjeta"),
+                    data.get("nombres"),
+                    data.get("primer_apellido"),
+                    data.get("segundo_apellido"),
+                    data.get("no_expd"),
+                    data.get("tipo_documento"),
+                    data.get("no_documento"),
+                    data.get("universidad"),
+                    data.get("estado_contador", "ACTIVO"),
+                    data.get("resolucion"),
+                    data.get("fecha_estado"),
+                    data.get("fecha_radicacion"),
+                    data.get("fecha_resolucion"),
+                    data.get("acta_jcc"),
+                    data.get("fecha_grado"),
+                    data.get("seccional"),
+                    data.get("fecha_emision") or datetime.now(),
+                    data.get("tipo_asociado_id"),
+                    data.get("estado_tarjeta_id")
+                )
+                
+                await cursor.execute(query, values)
+                await conn.commit()
+                return cursor.lastrowid
+                
+        except Exception as e:
+            print(f"[TarjetasRepository] Error al crear contador: {e}")
+            raise
+        finally:
+            conn.close()
+
+    async def create_sociedades(self, data: Dict[str, Any], client_id: Optional[int] = None) -> int:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cursor:
+                query = """
+                    INSERT INTO tn_tarjetavirtual_sociedades (
+                        no_expd,
+                        razon_social,
+                        nit,
+                        tipo_sociedad,
+                        inscripcion,
+                        fecha_radicacion,
+                        estado_sociedad,
+                        resolucion,
+                        fecha_resolucion,
+                        acta_jcc,
+                        estado_solicitud,
+                        tipo_solicitud,
+                        fecha_emision,
+                        tipo_asociado_id,
+                        estado_tarjeta_id
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s
+                    )
+                """
+                
+                values = (
+                    data.get("no_expd"),
+                    data.get("razon_social"),
+                    data.get("nit"),
+                    data.get("tipo_sociedad"),
+                    data.get("inscripcion"),
+                    data.get("fecha_radicacion"),
+                    data.get("estado_sociedad", "ACTIVO"),
+                    data.get("resolucion"),
+                    data.get("fecha_resolucion"),
+                    data.get("acta_jcc"),
+                    data.get("estado_solicitud"),
+                    data.get("tipo_solicitud"),
+                    data.get("fecha_emision") or datetime.now(),
+                    data.get("tipo_asociado_id"),
+                    data.get("estado_tarjeta_id")
+                )
+                
+                await cursor.execute(query, values)
+                await conn.commit()
+                return cursor.lastrowid
+                
+        except Exception as e:
+            print(f"[TarjetasRepository] Error al crear sociedad: {e}")
+            raise
+        finally:
+            conn.close()
+
+    async def create_auditoria_api(self, data: Dict[str, Any], client_id: Optional[int] = None) -> int:
+
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cursor:
+                query = """
+                    INSERT INTO tn_tarjetavirtual_auditoria_api (
+                        client_id,
+                        tipo_id,
+                        metodo,
+                        url,
+                        fecha_creacion,
+                        tipo_asociado_id,
+                        duracion_ms,
+                        parametros_peticion,
+                        cuerpo_respuesta_peticion
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                """
+                
+                values = (
+                    data.get("client_id"),
+                    data.get("tipo_id"),
+                    data.get("metodo"),
+                    data.get("url"),
+                    data.get("fecha_creacion") or datetime.now(),
+                    data.get("tipo_asociado_id"),
+                    data.get("duracion_ms"),
+                    json.dumps(data.get("parametros_peticion")) if data.get("parametros_peticion") else None,
+                    json.dumps(data.get("cuerpo_respuesta_peticion")) if data.get("cuerpo_respuesta_peticion") else None
+                )
+                
+                await cursor.execute(query, values)
+                await conn.commit()
+                return cursor.lastrowid
+                
+        except Exception as e:
+            print(f"[TarjetasRepository] Error al crear auditoría API: {e}")
+            raise
+        finally:
+            conn.close()
+
+    async def get_all_auditoria_api(self, client_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    """
+                    SELECT
+                        DATE_FORMAT(tapi.fecha_creacion, '%%Y-%%m-%%d %%H:%%i') AS fecha_hora,
+                        ttt.nombre AS endpoint,
+                        tapi.metodo,
+                        ttasociado.nombre AS tipo,
+                        tapi.duracion_ms,
+                        tapi.url,
+                        tapi.parametros_peticion,
+                        tapi.cuerpo_respuesta_peticion
+                    FROM tn_tarjetavirtual_auditoria_api tapi
+                    INNER JOIN tn_tarjetavirtual_tipos ttt
+                    ON tapi.tipo_id = ttt.id
+                    INNER JOIN tn_tarjetavirtual_tipos_asociados ttasociado
+                    ON tapi.tipo_asociado_id = ttasociado.id
+                    WHERE tapi.client_id = %s;
+                    """,
+                    (client_id,)
+                )
+                
+                row = await cursor.fetchall()
+                
+                for item in row:
+                    if item.get('cuerpo_respuesta_peticion'):
+                        try:
+                            item['cuerpo_respuesta_peticion'] = json.loads(item['cuerpo_respuesta_peticion'])
+                        except (json.JSONDecodeError, TypeError):
+                            pass 
+                    
+                    if item.get('parametros_peticion'):
+                        try:
+                            item['parametros_peticion'] = json.loads(item['parametros_peticion'])
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                return row  
+        except Exception as e:
+            print(f"Error al obtener el listado de auditoría API: {e}")
+            return None
         finally:
             conn.close()

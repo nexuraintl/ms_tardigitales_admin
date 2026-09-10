@@ -191,6 +191,8 @@ INSERT INTO tn_tarjetavirtual_tipos(nombre) VALUES
 ("Contadores"),
 ("Sociedades");
 
+ALTER TABLE tn_user_lst ENGINE=InnoDB;
+
 CREATE TABLE tn_tarjetavirtual_configuracion_branding (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     idCliente INT(11) NOT NULL,
@@ -204,7 +206,6 @@ CREATE TABLE tn_tarjetavirtual_configuracion_branding (
     fuente_letra VARCHAR(100) NOT NULL,
 
     usuario_creacion_id int NULL,
-    usuario_actualizacion_id int NULL,
     tipo_id INT NOT NULL,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -215,10 +216,7 @@ CREATE TABLE tn_tarjetavirtual_configuracion_branding (
         REFERENCES tn_tarjetavirtual_tipos(id),
 
     CONSTRAINT fk_configuracion_branding_usuario_creacion
-        FOREIGN KEY(usuario_creacion_id) REFERENCES tn_user_lst(id),
-
-    CONSTRAINT fk_configuracion_branding_usuario_actualizacion
-        FOREIGN KEY(usuario_actualizacion_id) REFERENCES tn_user_lst(id)
+        FOREIGN KEY(usuario_creacion_id) REFERENCES tn_user_lst(id)
 
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -251,3 +249,130 @@ CREATE TABLE tn_tarjetavirtual_configuracion_branding_historico (
         version
     )
 )ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Efecto de prueba para trabajar con las imagenes
+ALTER TABLE tn_tarjetavirtual_configuracion_branding 
+MODIFY COLUMN logo LONGTEXT NULL;
+
+ALTER TABLE tn_tarjetavirtual_configuracion_branding_historico 
+MODIFY COLUMN logo LONGTEXT NULL;
+
+-- Tabla para el manejo de los diferentes tipos
+CREATE TABLE tn_tarjetavirtual_tipos_asociados (
+	id INT AUTO_INCREMENT PRIMARY KEY,
+	nombre VARCHAR(60) not null 
+);
+
+INSERT INTO tn_tarjetavirtual_tipos_asociados(nombre)
+VALUES ('primeraVez'),
+('duplicado'),
+('sustitucion');
+
+-- Estados tarjetas
+CREATE TABLE tn_tarjetavirtual_estados_tarjetas (
+	id INT AUTO_INCREMENT PRIMARY KEY,
+	nombre VARCHAR(60) not null 
+);
+
+INSERT INTO tn_tarjetavirtual_estados_tarjetas(nombre)
+VALUES ('Activa'),
+('Emitida'),
+('Cancelada');
+
+-- Auditoria API
+CREATE TABLE tn_tarjetavirtual_auditoria_api (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    client_id INT NOT NULL,
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    tipo_id INT NOT NULL, 
+    metodo VARCHAR(15) NOT NULL,
+    tipo_asociado_id INT,
+    duracion_ms INT,                   
+    url VARCHAR(255) NOT NULL,
+    parametros_peticion TEXT COMMENT "Parámetros / cuerpo",
+    cuerpo_respuesta_peticion LONGTEXT COMMENT "Cuerpo de la respuesta",
+    
+    INDEX idx_fecha (fecha_creacion),
+    INDEX idx_tipo_id (tipo_id),
+    
+    CONSTRAINT fk_auditoria_api_tipo 
+    FOREIGN KEY (tipo_id) 
+    REFERENCES tn_tarjetavirtual_tipos(id),
+    
+    CONSTRAINT fk_auditoria_api_tipo_asociado_id 
+    FOREIGN KEY (tipo_asociado_id) 
+    REFERENCES tn_tarjetavirtual_tipos_asociados(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Sociedades
+CREATE TABLE tn_tarjetavirtual_sociedades (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    no_expd INT NOT NULL,
+    razon_social VARCHAR(255) NOT NULL,
+    nit VARCHAR(20) NOT NULL,
+    tipo_sociedad VARCHAR(100) NOT NULL,
+    inscripcion INT,
+    fecha_radicacion DATETIME,
+    estado_sociedad VARCHAR(50) DEFAULT 'ACTIVO',
+    resolucion VARCHAR(20),
+    fecha_resolucion DATE,
+    acta_jcc VARCHAR(50),
+    estado_solicitud VARCHAR(100),
+    tipo_solicitud VARCHAR(100),
+    fecha_emision DATETIME,
+    tipo_asociado_id INT NOT NULL COMMENT 'primeraVez, duplicado',
+    estado_tarjeta_id INT NOT NULL COMMENT 'Activa, Emitida y Cancelada',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_sociedades_estado_tarjeta_id
+    FOREIGN KEY (estado_tarjeta_id)
+    REFERENCES tn_tarjetavirtual_estados_tarjetas(id),
+
+    CONSTRAINT fk_sociedades_tipo_asociado_id
+    FOREIGN KEY (tipo_asociado_id)
+    REFERENCES tn_tarjetavirtual_tipos_asociados(id),
+
+    INDEX idx_no_expd (no_expd),
+    INDEX idx_nit (nit),
+    INDEX idx_estado_sociedad (estado_sociedad)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Contadores
+CREATE TABLE tn_tarjetavirtual_contadores (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    no_tarjeta VARCHAR(20) NOT NULL UNIQUE,
+    nombres VARCHAR(100) NOT NULL,
+    primer_apellido VARCHAR(100) NOT NULL,
+    segundo_apellido VARCHAR(100),
+    no_expd INT NOT NULL,
+    tipo_documento VARCHAR(10) NOT NULL,
+    no_documento BIGINT NOT NULL UNIQUE,
+    universidad VARCHAR(200),
+    estado_contador VARCHAR(50) DEFAULT 'ACTIVO',
+    resolucion VARCHAR(20),
+    fecha_estado DATETIME,
+    fecha_radicacion DATETIME,
+    fecha_resolucion DATE,
+    acta_jcc INT,
+    fecha_grado DATE,
+    seccional VARCHAR(100),
+    fecha_emision DATETIME,
+    tipo_asociado_id INT NOT NULL COMMENT 'primeraVez, duplicado',
+    estado_tarjeta_id INT NOT NULL COMMENT 'Activa, Emitida y Cancelada',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_contadores_estado_tarjeta_id
+    FOREIGN KEY (estado_tarjeta_id)
+    REFERENCES tn_tarjetavirtual_estados_tarjetas(id),
+
+    CONSTRAINT fk_contadores_tipo_asociado_id
+    FOREIGN KEY (tipo_asociado_id)
+    REFERENCES tn_tarjetavirtual_tipos_asociados(id),
+
+    INDEX idx_no_tarjeta (no_tarjeta),
+    INDEX idx_no_documento (no_documento),
+    INDEX idx_no_expd (no_expd),
+    INDEX idx_estado_contador (estado_contador)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
