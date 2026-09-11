@@ -10,74 +10,106 @@ class TarjetasRepository:
         conn = await get_client_connection(client_id)
         try:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
-                if tipo_tarjeta:
+                if tipo_tarjeta == "contadores":
                     await cursor.execute(
                         """
-                        SELECT
-                            id,
-                            tipo_tarjeta,
-                            codigo,
-                            expediente,
-                            solicitante,
-                            documento,
-                            matricula,
-                            correo,
-                            representante,
-                            tarjeta,
-                            DATE_FORMAT(fecha, '%%Y-%%m-%%d') AS fecha
-                        FROM tn_tarjetavirtual_tarjetas
-                        WHERE tipo_tarjeta = %s
-                        ORDER BY id DESC
-                        """,
-                        (tipo_tarjeta,)
+                        SELECT ttc.id,
+                            ttc.no_tarjeta,
+                            CONCAT(ttc.nombres, " ",ttc.primer_apellido, " ", ttc.segundo_apellido) AS nombre_completo,
+                            ttc.no_expd,
+                            ttta.nombre AS tipo_asociado,
+                            DATE_FORMAT(ttc.fecha_emision, '%Y-%m-%d %H:%i:%s') AS fecha_emision,
+                            CONCAT(ttc.tipo_documento, " ", ttc.no_documento) AS documento,
+                            ttc.correo,
+                            ttet.nombre AS estado_tarjeta,
+                            ttc.estado_contador 
+                        FROM tn_tarjetavirtual_contadores ttc 
+                        INNER JOIN tn_tarjetavirtual_tipos_asociados ttta 
+                        ON ttc.tipo_asociado_id = ttta.id 
+                        INNER JOIN tn_tarjetavirtual_estados_tarjetas ttet 
+                        ON ttc.estado_tarjeta_id = ttet.id
+                        ORDER BY ttc.id DESC
+                        """
+                    )
+                elif tipo_tarjeta == "sociedades":
+                    await cursor.execute(
+                        """
+                        SELECT tts.id,
+                            tts.no_expd,
+                            tts.razon_social,
+                            tts.nit,
+                            ttta.nombre AS tipo_asociado,
+                            DATE_FORMAT(tts.fecha_emision, '%Y-%m-%d %H:%i:%s') AS fecha_emision,
+                            tts.inscripcion,
+                            ttet.nombre AS estado_tarjeta,
+                            tts.estado_sociedad,
+                            tts.resolucion  
+                        FROM tn_tarjetavirtual_sociedades tts
+                        INNER JOIN tn_tarjetavirtual_tipos_asociados ttta 
+                        ON tts.tipo_asociado_id = ttta.id 
+                        INNER JOIN tn_tarjetavirtual_estados_tarjetas ttet 
+                        ON tts.estado_tarjeta_id = ttet.id 
+                        ORDER BY tts.id DESC
+                        """
                     )
                 else:
-                    await cursor.execute(
-                        """
-                        SELECT
-                            id,
-                            tipo_tarjeta,
-                            codigo,
-                            expediente,
-                            solicitante,
-                            documento,
-                            matricula,
-                            correo,
-                            representante,
-                            tarjeta,
-                            DATE_FORMAT(fecha, '%%Y-%%m-%%d') AS fecha
-                        FROM tn_tarjetavirtual_tarjetas
-                        ORDER BY id DESC
-                        """
-                    )
+                    return []
                 return await cursor.fetchall()
         finally:
             conn.close()
 
-    async def get_by_id(self, tarjeta_id: int, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    async def get_by_id(self, tarjeta_id: int, tipo_tarjeta: Optional[str] = None, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
         conn = await get_client_connection(client_id)
         try:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
-                await cursor.execute(
-                    """
-                    SELECT
-                        id,
-                        tipo_tarjeta,
-                        codigo,
-                        expediente,
-                        solicitante,
-                        documento,
-                        matricula,
-                        correo,
-                        representante,
-                        tarjeta,
-                        DATE_FORMAT(fecha, '%%Y-%%m-%%d') AS fecha
-                    FROM tn_tarjetavirtual_tarjetas
-                    WHERE id = %s
-                    LIMIT 1
-                    """,
-                    (tarjeta_id,)
-                )
+                if tipo_tarjeta == "contadores":
+                    await cursor.execute(
+                        """
+                        SELECT ttc.id,
+                            ttc.no_tarjeta,
+                            CONCAT(ttc.nombres, " ",ttc.primer_apellido, " ", ttc.segundo_apellido) AS nombre_completo,
+                            ttc.no_expd,
+                            ttta.nombre AS tipo_asociado,
+                            DATE_FORMAT(ttc.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision,
+                            CONCAT(ttc.tipo_documento, " ", ttc.no_documento) AS documento,
+                            ttc.correo,
+                            ttet.nombre AS estado_tarjeta,
+                            ttc.estado_contador 
+                        FROM tn_tarjetavirtual_contadores ttc 
+                        INNER JOIN tn_tarjetavirtual_tipos_asociados ttta 
+                        ON ttc.tipo_asociado_id = ttta.id 
+                        INNER JOIN tn_tarjetavirtual_estados_tarjetas ttet 
+                        ON ttc.estado_tarjeta_id = ttet.id
+                        WHERE ttc.id = %s
+                        ORDER BY ttc.id DESC
+                        """,
+                        (tarjeta_id,)
+                    )
+                elif tipo_tarjeta == "sociedades":
+                    await cursor.execute(
+                        """
+                        SELECT tts.id,
+                            tts.no_expd,
+                            tts.razon_social,
+                            tts.nit,
+                            ttta.nombre AS tipo_asociado,
+                            DATE_FORMAT(tts.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision,
+                            tts.inscripcion,
+                            ttet.nombre AS estado_tarjeta,
+                            tts.estado_sociedad,
+                            tts.resolucion  
+                        FROM tn_tarjetavirtual_sociedades tts
+                        INNER JOIN tn_tarjetavirtual_tipos_asociados ttta 
+                        ON tts.tipo_asociado_id = ttta.id 
+                        INNER JOIN tn_tarjetavirtual_estados_tarjetas ttet 
+                        ON tts.estado_tarjeta_id = ttet.id
+                        WHERE tts.id = %s 
+                        ORDER BY tts.id DESC
+                        """,
+                        (tarjeta_id,)
+                    )
+                else:
+                    return []
                 return await cursor.fetchone()
         finally:
             conn.close()
@@ -390,7 +422,8 @@ class TarjetasRepository:
                     logo = COALESCE(%s, logo),
                     color_fondo = COALESCE(%s, color_fondo),
                     color_letra = COALESCE(%s, color_letra),
-                    fuente_letra = COALESCE(%s, fuente_letra)
+                    fuente_letra = COALESCE(%s, fuente_letra),
+                    usuario_creacion_id = COALESCE(%s, usuario_creacion_id)
                 WHERE id = %s
                 """,
                 (
@@ -400,6 +433,7 @@ class TarjetasRepository:
                     update_data.get("color_fondo"),
                     update_data.get("color_letra"),
                     update_data.get("fuente_letra"),
+                    update_data.get("usuario_creacion_id"),
                     branding_id
                 )
             )
