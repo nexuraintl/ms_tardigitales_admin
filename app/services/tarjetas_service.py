@@ -158,6 +158,7 @@ class TarjetasService:
             acta_jcc=item.get("ACTA_JCC"),
             fecha_grado=self._parse_datetime(item.get("FECHA_GRADO")),
             seccional=item.get("SECCIONAL"),
+            correo = item.get("EMAIL", "no_registra@example.test"),
             fecha_emision=datetime.now(),
             tipo_asociado_id=tipo_asociado_id,
             estado_tarjeta_id=estado_tarjeta_id
