@@ -100,3 +100,7 @@ class SociedadCreateSchema(BaseModel):
     fecha_emision: Optional[datetime] = Field(None, description="Fecha de emisión")
     tipo_asociado_id: int = Field(..., description="ID del tipo de asociado (primeraVez=1, duplicado=2, sustitucion=3)")
     estado_tarjeta_id: int = Field(..., description="ID del estado de la tarjeta (Activa=1, Emitida=2, Cancelada=3)")
+
+class ConsultaTarjetaSchema(BaseModel):
+    documento: str = Field(..., description="Número de documento de identificación")
+    tipo: Optional[str] = Field("", description="Tipo de consulta ('primeraVez', 'duplicado', 'sustitucion', etc.)")
