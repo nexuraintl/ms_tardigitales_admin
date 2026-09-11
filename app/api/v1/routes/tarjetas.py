@@ -5,7 +5,8 @@ from app.schemas.tarjetas_schema import (
     TarjetaCreateSchema,
     ValidadorConfigSchema,
     BrandingCredentialsCreateSchema,
-    BrandingCredentialsUpdateSchema
+    BrandingCredentialsUpdateSchema,
+    ConsultaTarjetaSchema
 )
 
 router = APIRouter()
@@ -31,9 +32,10 @@ async def consult_registry(
 @router.get("/get/{id}")
 async def get_tarjeta(
     id: int = Path(..., description="ID de la tarjeta"),
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+    tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
 ):
-    return await service.get_tarjeta(id, client_id)
+    return await service.get_tarjeta(id, tipo_tarjeta ,client_id)
 
 @router.post("/create")
 async def create_tarjeta(
@@ -131,16 +133,22 @@ async def list_auditoria_api(
 
 @router.post('/contador/create')
 async def create_tarjeta_contador(
-    documento: str = Query(..., description="Número de documento de identificacion"),
-    tipo: Optional[str] = Query("", description="Tipo de consulta ('primeraVez', 'duplicado', 'sustitucion', etc.)"),
+    data: ConsultaTarjetaSchema = Body(...),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
 ):
-    return await service.create_tarjeta_contador(documento, tipo, client_id)
+    return await service.create_tarjeta_contador(
+        documento=data.documento,
+        tipo=data.tipo,
+        client_id=client_id,
+    )
 
 @router.post('/sociedad/create')
 async def create_tarjeta_sociedad(
-    documento: str = Query(..., description="Número de documento de identificacion"),
-    tipo: Optional[str] = Query("", description="Tipo de consulta ('primeraVez', 'duplicado', 'sustitucion', etc.)"),
+    data: ConsultaTarjetaSchema = Body(...),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
 ):
-    return await service.create_tarjeta_sociedad(documento, tipo, client_id)
+    return await service.create_tarjeta_sociedad(
+        documento=data.documento,
+        tipo=data.tipo,
+        client_id=client_id,
+    )
