@@ -376,3 +376,6 @@ CREATE TABLE tn_tarjetavirtual_contadores (
     INDEX idx_no_expd (no_expd),
     INDEX idx_estado_contador (estado_contador)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE tn_tarjetavirtual_contadores
+ADD COLUMN correo VARCHAR(200) NULL DEFAULT "no_registra@example.test";

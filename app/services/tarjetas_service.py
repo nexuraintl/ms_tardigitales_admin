@@ -90,9 +90,9 @@ class TarjetasService:
                 detail="No fue posible cargar el listado de tarjetas (MS-3830)."
             )
 
-    async def get_tarjeta(self, tarjeta_id: int, client_id: Optional[int] = None) -> Dict[str, Any]:
+    async def get_tarjeta(self, tarjeta_id: int, tipo_tarjeta: Optional[str] = None, client_id: Optional[int] = None) -> Dict[str, Any]:
         try:
-            tarjeta = await self.repository.get_by_id(tarjeta_id, client_id)
+            tarjeta = await self.repository.get_by_id(tarjeta_id, tipo_tarjeta ,client_id)
             if not tarjeta:
                 raise HTTPException(
                     status_code=404,
@@ -132,12 +132,14 @@ class TarjetasService:
         try:
             return datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
         except ValueError:
-            try:
-                return datetime.strptime(date_str, "%Y-%m-%d")
-            except ValueError:
-                print(f"[TarjetasService] Error parseando fecha: {date_str}")
-                return None
-    
+            pass
+        
+        try:
+            return datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            print(f"[TarjetasService] Error parseando fecha: {date_str}")
+            return None
+     
     def _map_contador_response(self, item: Dict[str, Any], tipo_asociado_id: int, estado_tarjeta_id: int) -> ContadorCreateSchema:
         return ContadorCreateSchema(
             no_tarjeta=item.get("NO_TARJETA"),
@@ -188,22 +190,23 @@ class TarjetasService:
         tipo_tarjeta: str = "contadores",
     ) -> Dict[str, Any]:
         try:
-            
             consulta = await self.jcc_client.consultar_registro(
                 documento=documento,
                 tipo_tarjeta=tipo_tarjeta,
                 tipo=tipo,
             )
 
-            estado_tarjeta = "Emitida"
-
-            disponibles = consulta.get("disponibles", []) or []
+            disponibles = consulta.get("disponibles", [])
+            
             if not disponibles:
-                raise HTTPException(
-                    status_code=404,
-                    detail="No se encontraron registros disponibles en el JCC para el documento indicado.",
-                )
+                return {
+                    "status": "no_data",
+                    "message": "No se encontraron registros disponibles en el JCC o los datos no cumplen los criterios.",
+                    "insertados": [],
+                    "errores": []
+                }
 
+            estado_tarjeta = "Emitida"
             tipo_asociado_id = int(TIPO_ASOCIADO_MAP.get(tipo, TipoAsociado.PRIMERA_VEZ))
             estado_tarjeta_id = int(TIPO_ESTADO_TARJETA_MAP.get(estado_tarjeta, TipoEstadoTarjeta.EMITIDA))
 
@@ -215,17 +218,20 @@ class TarjetasService:
                     schema = self._map_contador_response(
                         item, tipo_asociado_id, estado_tarjeta_id
                     )
+                    
                     new_id = await self.repository.create_contadores(
                         schema.dict(), client_id
                     )
                     insertados.append(new_id)
+                    
                 except Exception as e:
                     print(f"[TarjetasService] Error insertando contador: {e}")
                     errores.append(
-                        {"item": item.get("NO_TARJETA"), "error": str(e)}
+                        {"item": item.get("NO_TARJETA", "Desconocido"), "error": str(e)}
                     )
 
             status = "error" if not insertados else ("partial" if errores else "success")
+            
             return {
                 "status": status,
                 "message": f"{len(insertados)} tarjeta(s) de contador emitida(s).",
@@ -236,7 +242,7 @@ class TarjetasService:
         except HTTPException:
             raise
         except Exception as e:
-            print(f"[TarjetasService] Error al crear tarjeta contadores: {e}")
+            print(f"[TarjetasService] Error crítico al crear tarjeta contadores: {e}")
             raise HTTPException(
                 status_code=500,
                 detail="No fue posible completar la emisión de la tarjeta (MS-3831).",
@@ -256,15 +262,17 @@ class TarjetasService:
                 tipo=tipo,
             )
 
-            estado_tarjeta = "Emitida"
-
-            disponibles = consulta.get("disponibles", []) or []
+            disponibles = consulta.get("disponibles", [])
+            
             if not disponibles:
-                raise HTTPException(
-                    status_code=404,
-                    detail="No se encontraron registros disponibles en el JCC para el documento indicado.",
-                )
+                return {
+                    "status": "no_data",
+                    "message": "No se encontraron registros disponibles en el JCC o los datos no cumplen los criterios.",
+                    "insertados": [],
+                    "errores": []
+                }
 
+            estado_tarjeta = "Emitida"
             tipo_asociado_id = int(TIPO_ASOCIADO_MAP.get(tipo, TipoAsociado.PRIMERA_VEZ))
             estado_tarjeta_id = int(TIPO_ESTADO_TARJETA_MAP.get(estado_tarjeta, TipoEstadoTarjeta.EMITIDA))
 
@@ -276,17 +284,20 @@ class TarjetasService:
                     schema = self._map_sociedad_response(
                         item, tipo_asociado_id, estado_tarjeta_id
                     )
+                    
                     new_id = await self.repository.create_sociedades(
                         schema.dict(), client_id
                     )
                     insertados.append(new_id)
+                    
                 except Exception as e:
                     print(f"[TarjetasService] Error insertando sociedad: {e}")
                     errores.append(
-                        {"item": item.get("NO_EXPD"), "error": str(e)}
+                        {"item": item.get("NO_EXPD", "Desconocido"), "error": str(e)}
                     )
 
             status = "error" if not insertados else ("partial" if errores else "success")
+            
             return {
                 "status": status,
                 "message": f"{len(insertados)} tarjeta(s) de sociedad emitida(s).",
@@ -297,7 +308,7 @@ class TarjetasService:
         except HTTPException:
             raise
         except Exception as e:
-            print(f"[TarjetasService] Error al crear tarjeta sociedad: {e}")
+            print(f"[TarjetasService] Error crítico al crear tarjeta sociedad: {e}")
             raise HTTPException(
                 status_code=500,
                 detail="No fue posible completar la emisión de la tarjeta (MS-3831).",
@@ -422,6 +433,7 @@ class TarjetasService:
                     "color_fondo": data.color_fondo,
                     "color_letra": data.color_letra,
                     "fuente_letra": data.fuente_letra,
+                    "usuario_creacion_id": data.usuario_creacion_id
                 }
                 await self.repository.update_branding_credentials(
                     existing["id"], branding_data, client_id
@@ -429,8 +441,7 @@ class TarjetasService:
                 return {
                     "id": existing["id"],
                     "status": "success",
-                    "message": "Branding credencial creada exitosamente.",
-                    "accion": "update",
+                    "message": "Branding credencial creada exitosamente."
                 }
 
             branding_data = {
