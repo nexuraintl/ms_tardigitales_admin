@@ -80,6 +80,7 @@ class ContadorCreateSchema(BaseModel):
     acta_jcc: Optional[int] = Field(None, description="Número de acta de la JCC")
     fecha_grado: Optional[datetime] = Field(None, description="Fecha de grado")
     seccional: Optional[str] = Field(None, description="Seccional")
+    correo: Optional[str] = Field(None, description="Correo del contador")
     fecha_emision: Optional[datetime] = Field(None, description="Fecha de emisión")
     tipo_asociado_id: int = Field(..., description="ID del tipo de asociado (primeraVez=1, duplicado=2, sustitucion=3)")
     estado_tarjeta_id: int = Field(..., description="ID del estado de la tarjeta (Activa=1, Emitida=2, Cancelada=3)")
