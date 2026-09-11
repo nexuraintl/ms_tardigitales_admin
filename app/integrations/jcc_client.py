@@ -16,7 +16,7 @@ class JccClient:
     def __init__(self):
         self.last_url: str = ""
         self.last_metodo: str = "POST"
-        self.use_simulation_only = True 
+        self.use_simulation_only = False 
 
     def _normalizar_respuesta(self, data: Dict[str, Any]) -> Dict[str, Any]:
         if "data" in data and isinstance(data["data"], dict):
