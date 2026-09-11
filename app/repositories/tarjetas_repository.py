@@ -571,12 +571,13 @@ class TarjetasRepository:
                         acta_jcc,
                         fecha_grado,
                         seccional,
+                        correo,
                         fecha_emision,
                         tipo_asociado_id,
                         estado_tarjeta_id
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                 """
                 
@@ -597,6 +598,7 @@ class TarjetasRepository:
                     data.get("acta_jcc"),
                     data.get("fecha_grado"),
                     data.get("seccional"),
+                    data.get("correo"),
                     data.get("fecha_emision") or datetime.now(),
                     data.get("tipo_asociado_id"),
                     data.get("estado_tarjeta_id")
