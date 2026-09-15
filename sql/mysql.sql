@@ -257,6 +257,12 @@ MODIFY COLUMN logo LONGTEXT NULL;
 ALTER TABLE tn_tarjetavirtual_configuracion_branding_historico 
 MODIFY COLUMN logo LONGTEXT NULL;
 
+ALTER TABLE tn_tarjetavirtual_configuracion_branding 
+ADD COLUMN patron LONGTEXT NULL AFTER tipo_id;
+
+ALTER TABLE tn_tarjetavirtual_configuracion_branding_historico 
+ADD COLUMN patron LONGTEXT NULL AFTER usuario_creacion_id;
+
 -- Tabla para el manejo de los diferentes tipos
 CREATE TABLE tn_tarjetavirtual_tipos_asociados (
 	id INT AUTO_INCREMENT PRIMARY KEY,
@@ -379,3 +385,12 @@ CREATE TABLE tn_tarjetavirtual_contadores (
 
 ALTER TABLE tn_tarjetavirtual_contadores
 ADD COLUMN correo VARCHAR(200) NULL DEFAULT "no_registra@example.test";
+
+ALTER TABLE tn_tarjetavirtual_contadores
+ADD COLUMN foto LONGTEXT DEFAULT NULL AFTER correo;
+
+ALTER TABLE tn_tarjetavirtual_sociedades
+ADD COLUMN foto LONGTEXT DEFAULT NULL  AFTER estado_tarjeta_id;
+
+INSERT INTO tn_tarjetavirtual_tipos_asociados(nombre)
+VALUES ('modificacion');

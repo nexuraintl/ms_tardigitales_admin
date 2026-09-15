@@ -39,6 +39,7 @@ class BrandingCredentialsCreateSchema(BaseModel):
     version_actual: int = Field(1, description="Versión actual")
     version_publicada: Optional[int] = None
     logo: Optional[str] = None  # Ya NO es UploadFile, será base64 string
+    patron: Optional[str] = None
     color_fondo: str = Field(..., description="Color de fondo es requerido")
     color_letra: str = Field(..., description="Color de letra es requerido")
     fuente_letra: str = Field(..., description="Fuente es requerida")
@@ -84,6 +85,7 @@ class ContadorCreateSchema(BaseModel):
     fecha_emision: Optional[datetime] = Field(None, description="Fecha de emisión")
     tipo_asociado_id: int = Field(..., description="ID del tipo de asociado (primeraVez=1, duplicado=2, sustitucion=3)")
     estado_tarjeta_id: int = Field(..., description="ID del estado de la tarjeta (Activa=1, Emitida=2, Cancelada=3)")
+    foto: Optional[str] = Field(None, description="Foto contador")
 
 class SociedadCreateSchema(BaseModel):
     no_expd: int = Field(..., description="Número de expediente")
@@ -101,6 +103,7 @@ class SociedadCreateSchema(BaseModel):
     fecha_emision: Optional[datetime] = Field(None, description="Fecha de emisión")
     tipo_asociado_id: int = Field(..., description="ID del tipo de asociado (primeraVez=1, duplicado=2, sustitucion=3)")
     estado_tarjeta_id: int = Field(..., description="ID del estado de la tarjeta (Activa=1, Emitida=2, Cancelada=3)")
+    foto: Optional[str] = Field(None, description="Foto sociedad")
 
 class ConsultaTarjetaSchema(BaseModel):
     documento: str = Field(..., description="Número de documento de identificación")
