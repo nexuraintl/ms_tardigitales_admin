@@ -507,6 +507,7 @@ class TarjetasRepository:
                         version_actual,
                         version_publicada,
                         logo,
+                        patron,
                         color_fondo,
                         color_letra,
                         fuente_letra,
@@ -530,6 +531,7 @@ class TarjetasRepository:
                     """
                     SELECT
                         tcbh.logo,
+                        tcbh.patron,
                         tcbh.color_fondo,
                         tcbh.color_letra,
                         tcbh.fuente_letra
