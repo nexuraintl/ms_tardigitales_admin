@@ -7,15 +7,8 @@ from app.repositories.tarjetas_repository import TarjetasRepository
 from app.schemas.tarjetas_schema import TarjetaCreateSchema, ValidadorConfigSchema, BrandingCredentialsCreateSchema, BrandingCredentialsUpdateSchema, AuditoriaApiCreateSchema, ContadorCreateSchema, SociedadCreateSchema, ConsultaMatriculaResponseSchema
 from app.integrations.jcc_client import JccClient
 from app.services.auditoria_service import AuditoriaService
+from app.utils.mappers import ContadorMapper,SociedadMapper
 from app.constants import TIPO_ASOCIADO_MAP, TIPO_ESTADO_TARJETA_MAP , TipoEstadoTarjeta, TipoAsociado
-
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".svg"}
-ALLOWED_CONTENT_TYPES = {
-    "image/jpeg",
-    "image/png",
-    "image/svg+xml",
-}
-MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB
 
 class TarjetasService:
 
@@ -78,9 +71,36 @@ class TarjetasService:
 
         return result
 
-    async def list_tarjetas(self, tipo_tarjeta: Optional[str] = None, client_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    async def list_tarjetas(
+        self, 
+        tipo_tarjeta: Optional[str] = None, 
+        client_id: Optional[int] = None, 
+        page: int = 1, 
+        page_size: int = 10,
+        filtros: Optional[Dict[str, Any]] = None,
+        order_by: Optional[str] = None,
+        order_dir: str = "DESC"
+    ) -> Dict[str, Any]:
+        
+        page_size = min(max(page_size, 1), 100)
+
         try:
-            return await self.repository.get_all(tipo_tarjeta, client_id)
+            filtros = filtros or {}
+            return await self.repository.get_all(
+                tipo_tarjeta=tipo_tarjeta,
+                client_id=client_id,
+                page=page,
+                page_size=page_size,
+                filtro_nombre=filtros.get("nombre"),
+                filtro_documento=filtros.get("documento"),
+                filtro_expediente=filtros.get("expediente"),
+                filtro_resolucion=filtros.get("resolucion"),
+                filtro_acta_jcc=filtros.get("acta_jcc"),
+                filtro_no_tarjeta=filtros.get("no_tarjeta"),
+                filtro_inscripcion=filtros.get("inscripcion"),
+                order_by=order_by,
+                order_dir=order_dir
+            )
         except HTTPException:
             raise
         except Exception as e:
@@ -125,64 +145,6 @@ class TarjetasService:
                 detail="No fue posible completar la emisión de la tarjeta (MS-3831)."
             )
 
-    def _parse_datetime(self, date_str: Optional[str]) -> Optional[datetime]:
-        """Helper para parsear fechas desde la API de la JCC"""
-        if not date_str:
-            return None
-        try:
-            return datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            pass
-        
-        try:
-            return datetime.strptime(date_str, "%Y-%m-%d")
-        except ValueError:
-            print(f"[TarjetasService] Error parseando fecha: {date_str}")
-            return None
-     
-    def _map_contador_response(self, item: Dict[str, Any], tipo_asociado_id: int, estado_tarjeta_id: int) -> ContadorCreateSchema:
-        return ContadorCreateSchema(
-            no_tarjeta=item.get("NO_TARJETA"),
-            nombres=item.get("NOMBRES"),
-            primer_apellido=item.get("PRIMER_APELLIDO"),
-            segundo_apellido=item.get("SEGUNDO_APELLIDO"),
-            no_expd=item.get("NO_EXPD"),
-            tipo_documento=item.get("TIPO_DOCUMENTO"),
-            no_documento=item.get("NO_DOCUMENTO"),
-            universidad=item.get("UNIVERSIDAD"),
-            estado_contador=item.get("ESTADO_CONTADOR", "ACTIVO"),
-            resolucion=item.get("RESOLUCION"),
-            fecha_estado=self._parse_datetime(item.get("FECHA_ESTADO")),
-            fecha_radicacion=self._parse_datetime(item.get("FECHA_RADICACION")),
-            fecha_resolucion=self._parse_datetime(item.get("FECH_RESOLU")),
-            acta_jcc=item.get("ACTA_JCC"),
-            fecha_grado=self._parse_datetime(item.get("FECHA_GRADO")),
-            seccional=item.get("SECCIONAL"),
-            correo = item.get("EMAIL", "no_registra@example.test"),
-            fecha_emision=datetime.now(),
-            tipo_asociado_id=tipo_asociado_id,
-            estado_tarjeta_id=estado_tarjeta_id
-        )
-
-    def _map_sociedad_response(self, item: Dict[str, Any], tipo_asociado_id: int, estado_tarjeta_id: int) -> SociedadCreateSchema:
-        return SociedadCreateSchema(
-            no_expd=item.get("NO_EXPD"),
-            razon_social=item.get("RAZON_SOCIAL"),
-            nit=item.get("NIT"),
-            tipo_sociedad=item.get("TIPO_SOCIEDAD"),
-            inscripcion=item.get("INSCRIPCION"),
-            fecha_radicacion=self._parse_datetime(item.get("FECHA_RADICACION")),
-            estado_sociedad=item.get("ESTADO_SOCIEDAD", "ACTIVO"),
-            resolucion=item.get("RESOLUCION"),
-            fecha_resolucion=self._parse_datetime(item.get("FECH_RESOLU")),
-            acta_jcc=item.get("ACTA_JCC"),
-            estado_solicitud=item.get("ESTADO_SOLICITUD"),
-            tipo_solicitud=item.get("TIPO_SOLICITUD"),
-            fecha_emision=datetime.now(),
-            tipo_asociado_id=tipo_asociado_id,
-            estado_tarjeta_id=estado_tarjeta_id
-        )
-
     async def create_tarjeta_contador(
         self,
         documento: str,
@@ -198,13 +160,12 @@ class TarjetasService:
             )
 
             disponibles = consulta.get("disponibles", [])
+            foto_base64 = consulta.get("pdf",None)
             
             if not disponibles:
                 return {
                     "status": "no_data",
-                    "message": "No se encontraron registros disponibles en el JCC o los datos no cumplen los criterios.",
-                    "insertados": [],
-                    "errores": []
+                    "message": "No se encontraron registros disponibles en el JCC o los datos no cumplen los criterios."
                 }
 
             estado_tarjeta = "Emitida"
@@ -212,12 +173,24 @@ class TarjetasService:
             estado_tarjeta_id = int(TIPO_ESTADO_TARJETA_MAP.get(estado_tarjeta, TipoEstadoTarjeta.EMITIDA))
 
             insertados: List[int] = []
+            omitidos: List[Dict[str, Any]] = []
             errores: List[Dict[str, Any]] = []
 
             for item in disponibles:
+
+                no_documento = item.get("NO_DOCUMENTO")
+
+                existe_contador = await self.repository.exists_accountant(no_documento, client_id)
+                if existe_contador:
+                    omitidos.append({
+                        "no_documento": no_documento,
+                        "message": f"El contador con numero identificacion {no_documento} ya fue creada previamente.",
+                    })
+                    continue
+
                 try:
-                    schema = self._map_contador_response(
-                        item, tipo_asociado_id, estado_tarjeta_id
+                    schema = ContadorMapper.from_jcc(
+                        item, tipo_asociado_id, estado_tarjeta_id, foto_base64
                     )
                     
                     new_id = await self.repository.create_contadores(
@@ -231,13 +204,22 @@ class TarjetasService:
                         {"item": item.get("NO_TARJETA", "Desconocido"), "error": str(e)}
                     )
 
+
+            if not insertados and omitidos and not errores:
+                no_documents = ", ".join(str(o["no_documento"]) for o in omitidos)
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "status": "conflict",
+                        "message": f"El contador con numero documento {no_documents} ya está registrada previamente (MS-3857)."
+                    },
+                )
+
             status = "error" if not insertados else ("partial" if errores else "success")
             
             return {
                 "status": status,
-                "message": f"{len(insertados)} tarjeta(s) de contador emitida(s).",
-                "insertados": insertados,
-                "errores": errores,
+                "message": f"{len(insertados)} tarjeta(s) de contador emitida(s)."
             }
 
         except HTTPException:
@@ -264,26 +246,36 @@ class TarjetasService:
             )
 
             disponibles = consulta.get("disponibles", [])
+            foto_base64 = consulta.get("pdf",None)
             
             if not disponibles:
                 return {
                     "status": "no_data",
-                    "message": "No se encontraron registros disponibles en el JCC o los datos no cumplen los criterios.",
-                    "insertados": [],
-                    "errores": []
+                    "message": "No se encontraron registros disponibles en el JCC o los datos no cumplen los criterios."
                 }
-
+            
             estado_tarjeta = "Emitida"
             tipo_asociado_id = int(TIPO_ASOCIADO_MAP.get(tipo, TipoAsociado.PRIMERA_VEZ))
             estado_tarjeta_id = int(TIPO_ESTADO_TARJETA_MAP.get(estado_tarjeta, TipoEstadoTarjeta.EMITIDA))
 
             insertados: List[int] = []
+            omitidos: List[Dict[str, Any]] = []
             errores: List[Dict[str, Any]] = []
 
             for item in disponibles:
+                nit = item.get("NIT")
+
+                existe_sociedad = await self.repository.exists_society(nit, client_id)
+                if existe_sociedad:
+                    omitidos.append({
+                        "nit": nit,
+                        "message": f"La sociedad con NIT {nit} ya fue creada previamente.",
+                    })
+                    continue
+
                 try:
-                    schema = self._map_sociedad_response(
-                        item, tipo_asociado_id, estado_tarjeta_id
+                    schema = SociedadMapper.from_jcc(
+                        item, tipo_asociado_id, estado_tarjeta_id, foto_base64
                     )
                     
                     new_id = await self.repository.create_sociedades(
@@ -297,13 +289,21 @@ class TarjetasService:
                         {"item": item.get("NO_EXPD", "Desconocido"), "error": str(e)}
                     )
 
+            if not insertados and omitidos and not errores:
+                nits = ", ".join(str(o["nit"]) for o in omitidos)
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "status": "conflict",
+                        "message": f"La sociedad con NIT {nits} ya está(n) registrada(s) previamente (MS-3857)."
+                    },
+                )
+
             status = "error" if not insertados else ("partial" if errores else "success")
             
             return {
                 "status": status,
-                "message": f"{len(insertados)} tarjeta(s) de sociedad emitida(s).",
-                "insertados": insertados,
-                "errores": errores,
+                "message": f"{len(insertados)} tarjeta(s) de sociedad emitida(s)."
             }
 
         except HTTPException:
@@ -355,72 +355,6 @@ class TarjetasService:
                 detail="No fue posible guardar la configuración del validador (MS-3851)."
             )
 
-    async def process_image_to_base64(self, file: Optional[UploadFile]) -> Optional[str]:
-        if not file:
-            print("[TarjetasService] No se recibió archivo (logo=None)")
-            return None
-
-        filename = file.filename or ""
-        ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-        if ext not in ALLOWED_EXTENSIONS:
-            print(f"[TarjetasService] Extensión no permitida: {ext}")
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Formato de archivo no permitido ('{ext}'). "
-                    f"Formatos válidos: {', '.join(sorted(ALLOWED_EXTENSIONS))} (MS-3851)."
-                ),
-            )
-
-        content_type = (file.content_type or "").lower()
-        if content_type not in ALLOWED_CONTENT_TYPES:
-            print(f"[TarjetasService] Content-Type no permitido: {content_type}")
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Tipo de contenido no permitido ('{content_type}'). "
-                    f"Debe ser una imagen (MS-3851)."
-                ),
-            )
-
-        try:
-            content = await file.read()
-        except Exception as e:
-            print(f"[TarjetasService] Error leyendo archivo: {e}")
-            raise HTTPException(
-                status_code=400,
-                detail="No fue posible leer el archivo enviado (MS-3851).",
-            )
-
-        if not content:
-            print("[TarjetasService] El archivo llegó vacío (0 bytes)")
-            raise HTTPException(
-                status_code=400,
-                detail="El archivo enviado está vacío (MS-3851).",
-            )
-
-        if len(content) > MAX_LOGO_SIZE_BYTES:
-            print(f"[TarjetasService] Archivo demasiado grande: {len(content)} bytes")
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"El archivo excede el tamaño máximo permitido "
-                    f"({MAX_LOGO_SIZE_BYTES // (1024 * 1024)} MB) (MS-3851)."
-                ),
-            )
-
-        try:
-            base64_string = base64.b64encode(content).decode("utf-8")
-        except Exception as e:
-            print(f"[TarjetasService] Error al codificar a base64: {e}")
-            raise HTTPException(
-                status_code=400,
-                detail="No fue posible procesar la imagen del logo (MS-3851).",
-            )
-
-        print(f"[TarjetasService] Logo procesado: {len(content)} bytes, tipo {content_type}")
-        return f"data:{content_type};base64,{base64_string}"
-
     async def create_or_update_branding_credentials(self, data: BrandingCredentialsCreateSchema, client_id: Optional[int] = None,) -> Dict[str, Any]:
         try:
             existing = await self.repository.get_by_cliente_and_tipo(
@@ -431,6 +365,7 @@ class TarjetasService:
                 branding_data = {
                     "version_publicada": data.version_publicada,
                     "logo": data.logo,
+                    "patron": data.patron,
                     "color_fondo": data.color_fondo,
                     "color_letra": data.color_letra,
                     "fuente_letra": data.fuente_letra,
@@ -450,6 +385,7 @@ class TarjetasService:
                 "version_actual": data.version_actual,
                 "version_publicada": data.version_publicada,
                 "logo": data.logo,
+                "patron": data.patron,
                 "color_fondo": data.color_fondo,
                 "color_letra": data.color_letra,
                 "fuente_letra": data.fuente_letra,
@@ -461,7 +397,6 @@ class TarjetasService:
                 "id": new_id,
                 "status": "success",
                 "message": "Branding credencial creada exitosamente.",
-                "accion": "create",
             }
 
         except HTTPException:
@@ -541,9 +476,20 @@ class TarjetasService:
                 detail="No fue posible obtener la información del branding (MS-3856)."
             )
 
-    async def list_history_branding_credentials(self, branding_credential_id: int, client_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    async def list_history_branding_credentials(
+        self,
+        branding_credential_id: int,
+        client_id: Optional[int] = None,
+        page: int = 1,
+        page_size: int = 10
+    ) -> Dict[str, Any]:
         try:
-            return await self.repository.list_history_branding_credentials(branding_credential_id, client_id)
+            page_size = min(max(page_size, 1), 100)
+            page = max(page, 1)
+
+            return await self.repository.list_history_branding_credentials(
+                branding_credential_id, client_id, page, page_size
+            )
         except HTTPException:
             raise
         except Exception as e:
@@ -570,9 +516,29 @@ class TarjetasService:
                 detail="No fue posible completar la creacion de la auditoría API (MS-3852)."
             )
 
-    async def list_auditoria_api(self, client_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    async def list_auditoria_api(
+        self,
+        client_id: Optional[int] = None,
+        page: int = 1,
+        page_size: int = 10,
+        fecha_desde: Optional[str] = None,
+        fecha_hasta: Optional[str] = None,
+        endpoint: Optional[str] = None,
+        tipo: Optional[str] = None,
+    ) -> Dict[str, Any]:
         try:
-            return await self.repository.get_all_auditoria_api(client_id)
+            # Aseguramos que page_size nunca supere 100
+            page_size = min(max(page_size, 1), 100)
+            
+            return await self.repository.get_all_auditoria_api(
+                client_id=client_id,
+                page=page,
+                page_size=page_size,
+                fecha_desde=fecha_desde,
+                fecha_hasta=fecha_hasta,
+                endpoint=endpoint,
+                tipo=tipo,
+            )
         except HTTPException:
             raise
         except Exception as e:

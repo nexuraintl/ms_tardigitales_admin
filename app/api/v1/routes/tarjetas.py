@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query, HTTPException, Path, Body, Form, File, UploadFile
 from typing import List, Dict, Any, Optional
 from app.services.tarjetas_service import TarjetasService
+from app.utils.image_utils import ImageUtils
 from app.schemas.tarjetas_schema import (
     TarjetaCreateSchema,
     ValidadorConfigSchema,
@@ -15,9 +16,39 @@ service = TarjetasService()
 @router.get("/list")
 async def list_tarjetas(
     tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    page: int = Query(1, ge=1, description="Número de página a consultar"),
+    page_size: int = Query(10, ge=1, le=100, description="Cantidad de registros por página (máx 100)"),
+    filtro_nombre: Optional[str] = Query(None, description="Nombre completo (contadores) o Razón social (sociedades)"),
+    filtro_documento: Optional[str] = Query(None, description="Documento (contadores) o NIT (sociedades)"),
+    filtro_expediente: Optional[str] = Query(None, description="Número de expediente"),
+    filtro_resolucion: Optional[str] = Query(None, description="Número de resolución"),
+    filtro_acta_jcc: Optional[str] = Query(None, description="Número de acta JCC"),
+    filtro_no_tarjeta: Optional[str] = Query(None, description="Número de tarjeta (solo contadores)"),
+    filtro_inscripcion: Optional[str] = Query(None, description="Inscripción (solo sociedades)"),
+    order_by: Optional[str] = Query(None, description="Campo por el cual ordenar (ej: nombre_completo, fecha_emision)"),
+    order_dir: str = Query("DESC", pattern="^(ASC|DESC)$", description="Dirección del ordenamiento: ASC o DESC")
 ):
-    return await service.list_tarjetas(tipo_tarjeta, client_id)
+    
+    filtros = {
+        "nombre": filtro_nombre,
+        "documento": filtro_documento,
+        "expediente": filtro_expediente,
+        "resolucion": filtro_resolucion,
+        "acta_jcc": filtro_acta_jcc,
+        "no_tarjeta": filtro_no_tarjeta,
+        "inscripcion": filtro_inscripcion
+    }
+    
+    return await service.list_tarjetas(
+        tipo_tarjeta=tipo_tarjeta,
+        client_id=client_id,
+        page=page,
+        page_size=page_size,
+        filtros=filtros,
+        order_by=order_by,
+        order_dir=order_dir
+    )
 
 @router.get("/consult-registry")
 async def consult_registry(
@@ -72,6 +103,7 @@ async def create_branding_credentials(
     version_actual: int = Form(1),
     version_publicada: Optional[int] = Form(None),
     logo: Optional[UploadFile] = File(None),
+    patron: Optional[UploadFile] = File(None),
     color_fondo: str = Form(...),
     color_letra: str = Form(...),
     fuente_letra: str = Form(...),
@@ -79,13 +111,15 @@ async def create_branding_credentials(
     tipo_id: int = Form(...),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
 ):
-    logo_base64 = await service.process_image_to_base64(logo)
+    logo_base64 = await ImageUtils.upload_to_base64(logo)
+    patron_base64 = await ImageUtils.upload_to_base64(patron)
 
     data = BrandingCredentialsCreateSchema(
         idCliente=idCliente,
         version_actual=version_actual,
         version_publicada=version_publicada,
         logo=logo_base64,
+        patron=patron_base64,
         color_fondo=color_fondo,
         color_letra=color_letra,
         fuente_letra=fuente_letra,
@@ -110,7 +144,7 @@ async def get_branding_credentials(
 ):
     return await service.get_branding_credentials(id, client_id)
 
-@router.get("/branding-credentials/info-publicada/{id}")
+@router.get("/branding-credentials/info-published/{id}")
 async def get_branding_credentials(
     id: int = Path(..., description="ID único del Branding credentials"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
@@ -120,18 +154,35 @@ async def get_branding_credentials(
 @router.get("/branding-credentials/list-history-versions/{id}")
 async def list_history_branding_credentials(
     id: int = Path(..., description="ID Branding credentials"),
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    page: int = Query(1, ge=1, description="Número de página a consultar"),
+    page_size: int = Query(10, ge=1, le=100, description="Cantidad de registros por página (máx 100)")
 ):
-    return await service.list_history_branding_credentials(id, client_id)
+    return await service.list_history_branding_credentials(id, client_id, page, page_size)
 
 # Auditoria API
-@router.get("/auditoria-api/list")
+@router.get("/audit-api/list", response_model=Dict[str, Any])
 async def list_auditoria_api(
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    page: int = Query(1, ge=1, description="Número de página a consultar"),
+    page_size: int = Query(10, ge=1, le=100, description="Cantidad de registros por página (máx 100)"),
+    fecha_desde: Optional[str] = Query(None, description="Fecha y hora desde (YYYY-MM-DD HH:MM)"),
+    fecha_hasta: Optional[str] = Query(None, description="Fecha y hora hasta (YYYY-MM-DD HH:MM)"),
+    endpoint: Optional[str] = Query(None, description="Filtro por endpoint (contadores, sociedades)"),
+    tipo: Optional[str] = Query(None, description="Filtro por tipo de operación (primeraVez,duplicado,sustitucion,modificacion)"),
 ):
-    return await service.list_auditoria_api(client_id)
+    return await service.list_auditoria_api(
+        client_id=client_id,
+        page=page,
+        page_size=page_size,
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
+        endpoint=endpoint,
+        tipo=tipo,
+    )
 
-@router.post('/contador/create')
+# Contador creacion
+@router.post('/accountant/create')
 async def create_tarjeta_contador(
     data: ConsultaTarjetaSchema = Body(...),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
@@ -142,7 +193,8 @@ async def create_tarjeta_contador(
         client_id=client_id,
     )
 
-@router.post('/sociedad/create')
+# society creacion
+@router.post('/society/create')
 async def create_tarjeta_sociedad(
     data: ConsultaTarjetaSchema = Body(...),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
