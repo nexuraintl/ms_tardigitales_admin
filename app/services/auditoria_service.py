@@ -18,6 +18,12 @@ class AuditoriaService:
         cuerpo_respuesta: Dict[str, Any],
         duracion_ms: int,
     ) -> int:
+
+        if url == "https://preproduccion-se-caligovco.nexura.com/api/Rit/tarjetaContadores":
+            url = "https://apitarjetas.jcc.gov.co/contadores/"
+        elif url == "https://preproduccion-se-caligovco.nexura.com/api/Rit/tarjetaSociedades":   
+            url = "https://apitarjetas.jcc.gov.co/sociedades/"         
+
         payload = build_auditoria_payload(
             client_id=client_id,
             tipo_tarjeta=tipo_tarjeta,
