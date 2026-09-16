@@ -78,9 +78,10 @@ async def create_tarjeta(
 @router.get("/historial/{id}")
 async def get_historial(
     id: int = Path(..., description="ID de la tarjeta"),
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    tipo: Optional[str] = Query(None, description="Tipo de tarjeta ('contador' o 'sociedad')")
 ):
-    return await service.get_historial(id, client_id)
+    return await service.get_historial(id, client_id, tipo)
 
 @router.get("/validador-qr/get-config")
 async def get_validador_config(
