@@ -215,11 +215,24 @@ class TarjetasService:
                     },
                 )
 
-            status = "error" if not insertados else ("partial" if errores else "success")
+            if not insertados and errores:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Error en la base de datos al registrar la tarjeta (MS-3831).",
+                )
+
+            status = "partial" if errores else "success"
+            if len(insertados) == 1 and not errores:
+                msg = "Tarjeta digital de contador emitida exitosamente."
+            else:
+                msg = f"Se emitieron {len(insertados)} tarjetas de contador exitosamente."
+                
+            if errores:
+                msg += f" Hubo un error en la base de datos al procesar {len(errores)} registro(s)."
             
             return {
                 "status": status,
-                "message": f"{len(insertados)} tarjeta(s) de contador emitida(s)."
+                "message": msg
             }
 
         except HTTPException:
@@ -228,7 +241,7 @@ class TarjetasService:
             print(f"[TarjetasService] Error crítico al crear tarjeta contadores: {e}")
             raise HTTPException(
                 status_code=500,
-                detail="No fue posible completar la emisión de la tarjeta (MS-3831).",
+                detail="Error en la base de datos al registrar la tarjeta (MS-3831).",
             )
     
     async def create_tarjeta_sociedad(
@@ -299,11 +312,24 @@ class TarjetasService:
                     },
                 )
 
-            status = "error" if not insertados else ("partial" if errores else "success")
+            if not insertados and errores:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Error en la base de datos al registrar la tarjeta (MS-3831).",
+                )
+
+            status = "partial" if errores else "success"
+            if len(insertados) == 1 and not errores:
+                msg = "Tarjeta digital de sociedad emitida exitosamente."
+            else:
+                msg = f"Se emitieron {len(insertados)} tarjetas de sociedad exitosamente."
+                
+            if errores:
+                msg += f" Hubo un error en la base de datos al procesar {len(errores)} registro(s)."
             
             return {
                 "status": status,
-                "message": f"{len(insertados)} tarjeta(s) de sociedad emitida(s)."
+                "message": msg
             }
 
         except HTTPException:
@@ -312,7 +338,7 @@ class TarjetasService:
             print(f"[TarjetasService] Error crítico al crear tarjeta sociedad: {e}")
             raise HTTPException(
                 status_code=500,
-                detail="No fue posible completar la emisión de la tarjeta (MS-3831).",
+                detail="Error en la base de datos al registrar la tarjeta (MS-3831).",
             )
 
     async def get_historial(self, tarjeta_id: int, client_id: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -357,42 +383,27 @@ class TarjetasService:
 
     async def create_or_update_branding_credentials(self, data: BrandingCredentialsCreateSchema, client_id: Optional[int] = None,) -> Dict[str, Any]:
         try:
+            cid = client_id or data.idCliente or 20001
             existing = await self.repository.get_by_cliente_and_tipo(
-                data.idCliente, data.tipo_id, client_id
+                cid, data.tipo_id, client_id=cid
             )
 
-            if existing:
-                branding_data = {
-                    "version_publicada": data.version_publicada,
-                    "logo": data.logo,
-                    "patron": data.patron,
-                    "color_fondo": data.color_fondo,
-                    "color_letra": data.color_letra,
-                    "fuente_letra": data.fuente_letra,
-                    "usuario_creacion_id": data.usuario_creacion_id
-                }
-                await self.repository.update_branding_credentials(
-                    existing["id"], branding_data, client_id
-                )
-                return {
-                    "id": existing["id"],
-                    "status": "success",
-                    "message": "Branding credencial creada exitosamente."
-                }
+            # Preservar logo y patrón de la versión previa si no se enviaron nuevos
+            logo_val = data.logo or (existing.get("logo") if existing else None)
+            patron_val = data.patron or (existing.get("patron") if existing else None)
 
             branding_data = {
-                "idCliente": data.idCliente,
                 "version_actual": data.version_actual,
                 "version_publicada": data.version_publicada,
-                "logo": data.logo,
-                "patron": data.patron,
+                "logo": logo_val,
+                "patron": patron_val,
                 "color_fondo": data.color_fondo,
                 "color_letra": data.color_letra,
                 "fuente_letra": data.fuente_letra,
                 "usuario_creacion_id": data.usuario_creacion_id,
                 "tipo_id": data.tipo_id,
             }
-            new_id = await self.repository.create_branding_credentials(branding_data, client_id)
+            new_id = await self.repository.create_branding_credentials(branding_data, cid)
             return {
                 "id": new_id,
                 "status": "success",
@@ -525,6 +536,8 @@ class TarjetasService:
         fecha_hasta: Optional[str] = None,
         endpoint: Optional[str] = None,
         tipo: Optional[str] = None,
+        texto: Optional[str] = None,
+        cambiar_estado: Optional[str] = None,
     ) -> Dict[str, Any]:
         try:
             # Aseguramos que page_size nunca supere 100
@@ -538,6 +551,8 @@ class TarjetasService:
                 fecha_hasta=fecha_hasta,
                 endpoint=endpoint,
                 tipo=tipo,
+                texto=texto,
+                cambiar_estado=cambiar_estado,
             )
         except HTTPException:
             raise

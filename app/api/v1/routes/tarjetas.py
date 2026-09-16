@@ -99,7 +99,7 @@ async def update_validador_config(
 # Branding de credenciales
 @router.post("/branding-credentials/create")
 async def create_branding_credentials(
-    idCliente: int = Form(...),
+    idCliente: Optional[int] = Form(None),
     version_actual: int = Form(1),
     version_publicada: Optional[int] = Form(None),
     logo: Optional[UploadFile] = File(None),
@@ -162,6 +162,7 @@ async def list_history_branding_credentials(
 
 # Auditoria API
 @router.get("/audit-api/list", response_model=Dict[str, Any])
+@router.get("/auditoria-api/list", response_model=Dict[str, Any])
 async def list_auditoria_api(
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
     page: int = Query(1, ge=1, description="Número de página a consultar"),
@@ -170,6 +171,8 @@ async def list_auditoria_api(
     fecha_hasta: Optional[str] = Query(None, description="Fecha y hora hasta (YYYY-MM-DD HH:MM)"),
     endpoint: Optional[str] = Query(None, description="Filtro por endpoint (contadores, sociedades)"),
     tipo: Optional[str] = Query(None, description="Filtro por tipo de operación (primeraVez,duplicado,sustitucion,modificacion)"),
+    texto: Optional[str] = Query(None, description="Texto a buscar en petición o respuesta"),
+    cambiar_estado: Optional[str] = Query(None, description="Filtro por cambiarEstado (true, false)"),
 ):
     return await service.list_auditoria_api(
         client_id=client_id,
@@ -179,9 +182,12 @@ async def list_auditoria_api(
         fecha_hasta=fecha_hasta,
         endpoint=endpoint,
         tipo=tipo,
+        texto=texto,
+        cambiar_estado=cambiar_estado,
     )
 
 # Contador creacion
+@router.post('/contador/create')
 @router.post('/accountant/create')
 async def create_tarjeta_contador(
     data: ConsultaTarjetaSchema = Body(...),
@@ -194,6 +200,7 @@ async def create_tarjeta_contador(
     )
 
 # society creacion
+@router.post('/sociedad/create')
 @router.post('/society/create')
 async def create_tarjeta_sociedad(
     data: ConsultaTarjetaSchema = Body(...),
