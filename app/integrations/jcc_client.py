@@ -1,6 +1,8 @@
 import os
 import json
 import httpx
+import random
+import time
 from typing import Dict, Any
 
 PROD_BASE_URL = "https://apitarjetas.jcc.gov.co".rstrip("/")
@@ -16,8 +18,37 @@ ENABLE_JCC_MOCK_FALLBACK = os.getenv("ENABLE_JCC_MOCK_FALLBACK", "true").lower()
 # Fuerza retornar datos simulados inmediatamente sin intentar llamar a la red
 FORCE_JCC_MOCK = os.getenv("FORCE_JCC_MOCK", "false").lower() in ("true", "1", "yes")
 
-# Base64 dummy para simular la imagen PDF/avatar cuando no hay VPN
-MOCK_IMAGE_BASE64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+# Base64 dummy sobrio (Avatar en slate oscuro/plateado) para simular la fotografía/avatar cuando no hay VPN
+MOCK_IMAGE_BASE64 = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiB2aWV3Qm94PSIwIDAgMjAwIDIwMCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj48c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjMzM0MTU1Ii8+PHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjMWUyOTNiIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIyMDAiIHJ4PSIyMCIgZmlsbD0idXJsKCNnKSIvPjxjaXJjbGUgY3g9IjEwMCIgY3k9Ijc1IiByPSIzNSIgZmlsbD0iI2NiZDVlMSIvPjxwYXRoIGQ9Ik0xMDAgMTIwIGMtMzUgMCAtNjUgMTggLTY1IDQwIHYgMTUgaCAxMzAgdiAtMTUgYzAgLTIyIC0zMCAtNDAgLTY1IC00MCB6IiBmaWxsPSIjY2JkNWUxIi8+PC9zdmc+"
+
+# Listados de 20 nombres y 20 apellidos para combinación dinámica en simulaciones
+NOMBRES_MOCK = [
+    "CARLOS ANDRES", "MARIA FERNANDA", "JUAN DAVID", "LAURA VICTORIA",
+    "ALEJANDRO", "DIANA CAROLINA", "SANTIAGO", "ANA MARIA",
+    "GABRIEL EDUARDO", "DANIELA", "FELIPE", "ANDREA DEL PILAR",
+    "CAMILO ERNESTO", "VALENTINA", "MATEO", "SOFIA",
+    "NICOLAS", "NATALIA", "DIEGO FERNANDO", "PAOLA ANDREA"
+]
+
+APELLIDOS_MOCK = [
+    "RODRIGUEZ", "GOMEZ", "MORALES", "LOPEZ",
+    "MARTINEZ", "VARGAS", "HERNANDEZ", "TORRES",
+    "RAMIREZ", "CASTRO", "MENDOZA", "SILVA",
+    "RINCON", "QUINTERO", "SALAZAR", "OSPINA",
+    "CARDONA", "BELTRAN", "GUTIERREZ", "ROJAS"
+]
+
+SOCIEDADES_NOMBRES = [
+    "ASESORES CONTABLES Y TRIBUTARIOS", "AUDITORES ASOCIADOS", "CONSULTORES FINANCIEROS",
+    "SOLUCIONES CONTABLES", "INVERSIONES Y AUDITORIAS", "SERVICIOS CONTABLES INTEGRALES",
+    "ESTRATEGIA TRIBUTARIA", "GRUPO FINANCIERO", "CONTADORES PUBLICOS UNIDOS",
+    "GESTION FISCAL GLOBAL", "AUDITORES FINANCIEROS Y FISCALES", "VISION CONTABLE",
+    "CONSULTORES TRIBUTARIOS INTEGRADOS", "ALIANZA CONTABLE E IMPUESTOS", "ASESORIAS FISCALES CORPORATIVAS",
+    "RED DE AUDITORES COLOMBIA", "INTEGRITA CONTABLE", "NEXO FINANCIERO Y CONTABLE",
+    "ASESORES GLOBALES DE COLOMBIA", "CONSULTORIA Y AUDITORIA ESTRATEGICA"
+]
+
+SOCIEDADES_TIPOS = ["S.A.S.", "& CIA LTDA", "S.A.", "E HIJOS S.A.S.", "GROUP S.A.S."]
 
 
 class JccClient:
@@ -46,48 +77,61 @@ class JccClient:
 
     def _generar_respuesta_mock(self, documento: str, tipo_tarjeta: str) -> Dict[str, Any]:
         """
-        Genera una respuesta simulada idéntica a la que entregaría https://apitarjetas.jcc.gov.co/
+        Genera una respuesta simulada combinando aleatoriamente listados de 20 nombres y 20 apellidos
         cuando no hay conectividad VPN en preproducción/local.
         """
-        print(f"[JCC API Client] 🎭 Generando respuesta SIMULADA para documento: {documento} ({tipo_tarjeta})")
+        print(f"[JCC API Client] 🎭 Generando respuesta SIMULADA combinada para documento: {documento} ({tipo_tarjeta})")
+
+        # Usar semilla basada en documento si viene uno, o combinaciones aleatorias
+        seed_val = f"{documento}_{time.time()}" if documento else str(time.time())
+        rnd = random.Random(seed_val)
 
         if tipo_tarjeta == "sociedades":
             nit_limpio = documento
-            razon_social = f"SOCIEDAD CONTABLE SIMULADA S.A.S."
+            base_nombre = rnd.choice(SOCIEDADES_NOMBRES)
+            tipo_soc = rnd.choice(SOCIEDADES_TIPOS)
+            razon_social = f"{base_nombre} {tipo_soc}"
+
             item_mock = {
                 "NIT": nit_limpio,
                 "RAZON_SOCIAL": razon_social,
                 "TIPO_SOCIEDAD": "SOCIEDAD DE CONTADORES",
-                "NO_EXPD": 98765,
-                "INSCRIPCION": 4321,
+                "NO_EXPD": rnd.randint(10000, 99999),
+                "INSCRIPCION": rnd.randint(1000, 9999),
                 "ESTADO_SOCIEDAD": "ACTIVO",
-                "RESOLUCION": "RES-SOC-SIM-2024",
+                "RESOLUCION": f"RES-SOC-{rnd.randint(100, 999)}-2024",
                 "FECH_RESOLU": "2024-02-01T00:00:00",
                 "FECHA_RADICACION": "2024-01-20T00:00:00",
-                "ACTA_JCC": "ACTA-SOC-SIM-200",
+                "ACTA_JCC": f"ACTA-SOC-{rnd.randint(100, 999)}",
                 "ESTADO_SOLICITUD": "APROBADO",
                 "TIPO_SOLICITUD": "PRIMERA VEZ"
             }
         else:
             doc_suffix = documento[-6:] if len(documento) >= 6 else documento
+            nombre_sel = rnd.choice(NOMBRES_MOCK)
+            apellido1_sel = rnd.choice(APELLIDOS_MOCK)
+            apellido2_sel = rnd.choice(APELLIDOS_MOCK)
+
+            email_user = f"{nombre_sel.lower().split()[0]}.{apellido1_sel.lower()}{rnd.randint(10,99)}"
+
             item_mock = {
                 "NO_DOCUMENTO": documento,
                 "TIPO_DOCUMENTO": "CC",
-                "NOMBRES": "JUAN CARLOS",
-                "PRIMER_APELLIDO": "PEREZ",
-                "SEGUNDO_APELLIDO": "RODRIGUEZ",
+                "NOMBRES": nombre_sel,
+                "PRIMER_APELLIDO": apellido1_sel,
+                "SEGUNDO_APELLIDO": apellido2_sel,
                 "NO_TARJETA": f"TP-{doc_suffix}",
-                "NO_EXPD": 123456,
+                "NO_EXPD": rnd.randint(100000, 999999),
                 "UNIVERSIDAD": "UNIVERSIDAD SIMULADA JCC",
                 "ESTADO_CONTADOR": "ACTIVO",
-                "RESOLUCION": "RES-SIM-2024-001",
+                "RESOLUCION": f"RES-{rnd.randint(1000, 9999)}-2024",
                 "FECHA_ESTADO": "2024-01-15T00:00:00",
                 "FECHA_RADICACION": "2024-01-10T00:00:00",
                 "FECH_RESOLU": "2024-01-12T00:00:00",
-                "ACTA_JCC": 100,
+                "ACTA_JCC": rnd.randint(100, 999),
                 "FECHA_GRADO": "2023-12-01T00:00:00",
                 "SECCIONAL": "BOGOTA",
-                "EMAIL": "contador.simulado@example.com"
+                "EMAIL": f"{email_user}@example.com"
             }
 
         return {
