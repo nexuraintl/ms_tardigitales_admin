@@ -54,8 +54,22 @@ class JccClient:
             sim_endpoint = "/tarjetaContadores"
             tipo_defecto = "primeraVez"
 
+        tipo_map = {
+            "Primera vez": "primeraVez",
+            "Duplicado": "duplicado",
+            "Sustitución": "sustitucion",
+            "Sustitucion": "sustitucion",
+            "Modificación": "modificacion",
+            "Modificacion": "modificacion",
+            "primeraVez": "primeraVez",
+            "duplicado": "duplicado",
+            "sustitucion": "sustitucion",
+            "modificacion": "modificacion"
+        }
+        tipo_final = tipo_map.get(tipo, tipo if tipo else tipo_defecto)
+
         payload = {
-            "tipo": tipo if tipo else tipo_defecto,
+            "tipo": tipo_final,
             "documento": documento_limpio,
             "cambiarEstado": False
         }

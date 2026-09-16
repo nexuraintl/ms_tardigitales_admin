@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -22,11 +23,14 @@ class ContadorMapper:
 
         if foto and isinstance(foto, str):
             if "Imagen no existe" not in foto and "no registra" not in foto.lower():
-                extension = os.path.splitext(foto)[1].lower()
-                if extension in ['.jpg', '.jpeg', '.png', '.svg']:
+                if foto.startswith("data:") or len(foto) > 200:
                     foto_procesada = ImageUtils.normalizar_base64(foto)
                 else:
-                    print(f"[Mapper] La ruta de foto no tiene una extensión válida: {foto}")
+                    extension = os.path.splitext(foto)[1].lower()
+                    if extension in ['.jpg', '.jpeg', '.png', '.svg']:
+                        foto_procesada = ImageUtils.normalizar_base64(foto)
+                    else:
+                        print(f"[Mapper] La ruta de foto no tiene una extensión válida: {foto}")
         
         return ContadorCreateSchema(
             no_tarjeta=item.get("NO_TARJETA"),
