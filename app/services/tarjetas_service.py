@@ -341,9 +341,9 @@ class TarjetasService:
                 detail="Error en la base de datos al registrar la tarjeta (MS-3831).",
             )
 
-    async def get_historial(self, tarjeta_id: int, client_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    async def get_historial(self, tarjeta_id: int, client_id: Optional[int] = None, tipo: Optional[str] = None) -> List[Dict[str, Any]]:
         try:
-            return await self.repository.get_historial(tarjeta_id, client_id)
+            return await self.repository.get_historial(tarjeta_id, client_id, tipo)
         except HTTPException:
             raise
         except Exception as e:

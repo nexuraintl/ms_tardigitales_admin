@@ -302,7 +302,7 @@ class TarjetasRepository:
         finally:
             conn.close()
 
-    async def get_historial(self, tarjeta_id: int, client_id: Optional[int] = None) -> Dict[str, Any]:
+    async def get_historial(self, tarjeta_id: int, client_id: Optional[int] = None, tipo: Optional[str] = None) -> Dict[str, Any]:
         conn = await get_client_connection(client_id)
         try:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -343,16 +343,29 @@ class TarjetasRepository:
                 )
                 lecturas = await cursor.fetchall()
 
-                # 3. Intentar obtener datos básicos de la tarjeta (Contadores o Sociedades)
-                await cursor.execute(
-                    """
-                    SELECT id, no_expd AS expediente, no_tarjeta AS matricula, CONCAT(nombres, ' ', primer_apellido, ' ', COALESCE(segundo_apellido,'')) AS solicitante, CONCAT(tipo_documento, ' ', no_documento) AS documento, correo, foto, 'Activa' AS tarjeta
-                    FROM tn_tarjetavirtual_contadores WHERE id = %s
-                    """,
-                    (tarjeta_id,)
-                )
-                tarjeta = await cursor.fetchone()
+                # 3. Intentar obtener datos básicos de la tarjeta (Contadores o Sociedades según tipo)
+                tarjeta = None
+                if tipo and tipo.lower() == 'sociedad':
+                    await cursor.execute(
+                        """
+                        SELECT id, no_expd AS expediente, nit AS documento, razon_social AS solicitante, 'Activa' AS tarjeta, foto
+                        FROM tn_tarjetavirtual_sociedades WHERE id = %s
+                        """,
+                        (tarjeta_id,)
+                    )
+                    tarjeta = await cursor.fetchone()
+                
                 if not tarjeta:
+                    await cursor.execute(
+                        """
+                        SELECT id, no_expd AS expediente, no_tarjeta AS matricula, CONCAT(nombres, ' ', primer_apellido, ' ', COALESCE(segundo_apellido,'')) AS solicitante, CONCAT(tipo_documento, ' ', no_documento) AS documento, correo, foto, 'Activa' AS tarjeta
+                        FROM tn_tarjetavirtual_contadores WHERE id = %s
+                        """,
+                        (tarjeta_id,)
+                    )
+                    tarjeta = await cursor.fetchone()
+
+                if not tarjeta and not (tipo and tipo.lower() == 'sociedad'):
                     await cursor.execute(
                         """
                         SELECT id, no_expd AS expediente, nit AS documento, razon_social AS solicitante, 'Activa' AS tarjeta, foto
