@@ -26,6 +26,10 @@ TIPO_ASOCIADO_MAP = {
     "duplicado": TipoAsociado.DUPLICADO,
     "sustitucion": TipoAsociado.SUSTITUCION,
     "modificacion": TipoAsociado.MODIFICACION,
+    "Primera vez": TipoAsociado.PRIMERA_VEZ,
+    "Duplicado": TipoAsociado.DUPLICADO,
+    "Sustitución": TipoAsociado.SUSTITUCION,
+    "Sustitucion": TipoAsociado.SUSTITUCION,
 }
 
 TIPO_ESTADO_TARJETA_MAP = {

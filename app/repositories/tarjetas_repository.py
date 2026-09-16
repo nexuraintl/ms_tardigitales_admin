@@ -165,7 +165,8 @@ class TarjetasRepository:
                             ttc.acta_jcc,
                             DATE_FORMAT(ttc.fecha_grado, '%%Y-%%m-%%d') AS fecha_grado,
                             ttc.seccional,
-                            ttc.no_tarjeta
+                            ttc.no_tarjeta,
+                            ttc.foto
                     """
                 else:
                     select_fields = """
@@ -184,7 +185,8 @@ class TarjetasRepository:
                             DATE_FORMAT(tts.fecha_resolucion, '%%Y-%%m-%%d') AS fecha_resolucion,
                             tts.acta_jcc,
                             tts.estado_solicitud,
-                            tts.tipo_solicitud
+                            tts.tipo_solicitud,
+                            tts.foto
                     """
 
                 data_query = f"""
@@ -210,7 +212,7 @@ class TarjetasRepository:
                 
         except Exception as e:
             print(f"Error al obtener el listado de tarjetas: {e}")
-            return None
+            raise e
         finally:
             conn.close()
 
@@ -300,10 +302,11 @@ class TarjetasRepository:
         finally:
             conn.close()
 
-    async def get_historial(self, tarjeta_id: int, client_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    async def get_historial(self, tarjeta_id: int, client_id: Optional[int] = None) -> Dict[str, Any]:
         conn = await get_client_connection(client_id)
         try:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
+                # 1. Obtener estados de la tarjeta
                 await cursor.execute(
                     """
                     SELECT
@@ -319,7 +322,64 @@ class TarjetasRepository:
                     """,
                     (tarjeta_id,)
                 )
-                return await cursor.fetchall()
+                estados = await cursor.fetchall()
+
+                # 2. Obtener lecturas QR
+                await cursor.execute(
+                    """
+                    SELECT
+                        id,
+                        tarjeta_id,
+                        endpoint,
+                        metodo,
+                        codigo_http,
+                        ip,
+                        DATE_FORMAT(fecha, '%%Y-%%m-%%d %%H:%%i') AS fecha
+                    FROM tn_tarjetavirtual_lecturas_historial
+                    WHERE tarjeta_id = %s
+                    ORDER BY id DESC
+                    """,
+                    (tarjeta_id,)
+                )
+                lecturas = await cursor.fetchall()
+
+                # 3. Intentar obtener datos básicos de la tarjeta (Contadores o Sociedades)
+                await cursor.execute(
+                    """
+                    SELECT id, no_expd AS expediente, no_tarjeta AS matricula, CONCAT(nombres, ' ', primer_apellido, ' ', COALESCE(segundo_apellido,'')) AS solicitante, CONCAT(tipo_documento, ' ', no_documento) AS documento, correo, foto, 'Activa' AS tarjeta
+                    FROM tn_tarjetavirtual_contadores WHERE id = %s
+                    """,
+                    (tarjeta_id,)
+                )
+                tarjeta = await cursor.fetchone()
+                if not tarjeta:
+                    await cursor.execute(
+                        """
+                        SELECT id, no_expd AS expediente, nit AS documento, razon_social AS solicitante, 'Activa' AS tarjeta, foto
+                        FROM tn_tarjetavirtual_sociedades WHERE id = %s
+                        """,
+                        (tarjeta_id,)
+                    )
+                    tarjeta = await cursor.fetchone()
+
+                # Si no hay estados explícitos aún para este ID, generar registro inicial de emisión
+                if not estados:
+                    estados = [
+                        {
+                            "id": 1,
+                            "tarjeta_id": tarjeta_id,
+                            "estado": "Emitida",
+                            "descripcion": "Credencial generada correctamente.",
+                            "fecha": "Recientemente",
+                            "realizado_por": "Sistema JCC"
+                        }
+                    ]
+
+                return {
+                    "tarjeta": tarjeta,
+                    "estados": estados or [],
+                    "lecturas": lecturas or []
+                }
         finally:
             conn.close()
 
@@ -410,68 +470,68 @@ class TarjetasRepository:
         finally:
             conn.close()
 
-    #Buscar por tipo y cliente
-    async def get_by_cliente_and_tipo(self, id_cliente: int, tipo_id: int, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
-        conn = await get_client_connection(client_id)
+    # Buscar por tipo y cliente (Tabla Única Unificada)
+    async def get_by_cliente_and_tipo(self, id_cliente: Optional[int], tipo_id: int, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        cid = client_id or id_cliente
+        conn = await get_client_connection(cid)
         try:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute(
                     """
                     SELECT
-                        id, idCliente, version_actual, version_publicada,
-                        logo, color_fondo, color_letra, fuente_letra,
-                        usuario_creacion_id, tipo_id
+                        id, tipo_id, version, publicado,
+                        version AS version_actual,
+                        CASE WHEN publicado = 1 THEN version ELSE NULL END AS version_publicada,
+                        logo, patron, color_fondo, color_letra, fuente_letra,
+                        usuario_creacion_id,
+                        DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_branding
-                    WHERE idCliente = %s AND tipo_id = %s
+                    WHERE tipo_id = %s
+                    ORDER BY publicado DESC, version DESC
                     LIMIT 1
                     """,
-                    (id_cliente, tipo_id),
+                    (tipo_id,),
                 )
                 return await cursor.fetchone()
         finally:
             conn.close()
 
     async def create_branding_credentials(self, branding_credencials_data: Dict[str, Any], client_id: Optional[int] = None) -> int:
-        conn = await get_client_connection(client_id)
+        cid = client_id or branding_credencials_data.get("idCliente", 20001)
+        tipo_id = int(branding_credencials_data.get("tipo_id", 1))
+        conn = await get_client_connection(cid)
         cursor = None
         try:
             cursor = await conn.cursor()
             await cursor.execute("START TRANSACTION")
             
             await cursor.execute(
-                """
-                INSERT INTO tn_tarjetavirtual_configuracion_branding (
-                    idCliente, version_actual, version_publicada, logo, patron, color_fondo,
-                    color_letra, fuente_letra, usuario_creacion_id,tipo_id
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    client_id,
-                    int(branding_credencials_data.get("version_actual", 1)),
-                    branding_credencials_data.get("version_publicada"),
-                    branding_credencials_data.get("logo"),
-                    branding_credencials_data.get("patron"),
-                    branding_credencials_data.get("color_fondo"),
-                    branding_credencials_data.get("color_letra"),
-                    branding_credencials_data.get("fuente_letra"),
-                    branding_credencials_data.get("usuario_creacion_id"),
-                    branding_credencials_data.get("tipo_id")
-                )
+                "SELECT COALESCE(MAX(version), 0) FROM tn_tarjetavirtual_configuracion_branding WHERE tipo_id = %s",
+                (tipo_id,)
             )
+            max_row = await cursor.fetchone()
+            next_version = (max_row[0] if max_row else 0) + 1
             
-            branding_id = cursor.lastrowid
-            
+            is_published = 0
+            pub_v = branding_credencials_data.get("version_publicada")
+            if pub_v is not None and int(pub_v) == next_version:
+                is_published = 1
+                await cursor.execute(
+                    "UPDATE tn_tarjetavirtual_configuracion_branding SET publicado = 0 WHERE tipo_id = %s",
+                    (tipo_id,)
+                )
+
             await cursor.execute(
                 """
-                INSERT INTO tn_tarjetavirtual_configuracion_branding_historico (
-                    idCliente, configuracion_branding_id, version, logo, patron, color_fondo,
+                INSERT INTO tn_tarjetavirtual_configuracion_branding (
+                    tipo_id, version, publicado, logo, patron, color_fondo,
                     color_letra, fuente_letra, usuario_creacion_id
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
-                    client_id,
-                    branding_id,
-                    int(branding_credencials_data.get("version_actual", 1)),
+                    tipo_id,
+                    next_version,
+                    is_published,
                     branding_credencials_data.get("logo"),
                     branding_credencials_data.get("patron"),
                     branding_credencials_data.get("color_fondo"),
@@ -481,8 +541,8 @@ class TarjetasRepository:
                 )
             )
             
+            branding_id = cursor.lastrowid
             await cursor.execute("COMMIT")
-            
             return branding_id
             
         except Exception as e:
@@ -503,20 +563,18 @@ class TarjetasRepository:
                 await cursor.execute(
                     """
                     SELECT
-                        id,
-                        version_actual,
-                        version_publicada,
-                        logo,
-                        patron,
-                        color_fondo,
-                        color_letra,
-                        fuente_letra,
-                        usuario_creacion_id
+                        id, tipo_id, version, publicado,
+                        version AS version_actual,
+                        CASE WHEN publicado = 1 THEN version ELSE NULL END AS version_publicada,
+                        logo, patron, color_fondo, color_letra, fuente_letra,
+                        usuario_creacion_id,
+                        DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_branding
-                    WHERE id = %s
+                    WHERE id = %s OR tipo_id = %s
+                    ORDER BY publicado DESC, version DESC
                     LIMIT 1
                     """,
-                    (branding_credential_id,)
+                    (branding_credential_id, branding_credential_id)
                 )
                 row = await cursor.fetchone()
                 return row
@@ -530,118 +588,60 @@ class TarjetasRepository:
                 await cursor.execute(
                     """
                     SELECT
-                        tcbh.logo,
-                        tcbh.patron,
-                        tcbh.color_fondo,
-                        tcbh.color_letra,
-                        tcbh.fuente_letra
-                    FROM tn_tarjetavirtual_configuracion_branding_historico tcbh
-                    INNER JOIN tn_tarjetavirtual_configuracion_branding ttc
-                        ON ttc.id = tcbh.configuracion_branding_id
-                        AND ttc.version_publicada = tcbh.version
-                    WHERE tcbh.configuracion_branding_id = %s
-                    ORDER BY tcbh.version DESC
+                        id, tipo_id, version, publicado,
+                        version AS version_publicada,
+                        logo, patron, color_fondo, color_letra, fuente_letra,
+                        usuario_creacion_id,
+                        DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
+                    FROM tn_tarjetavirtual_configuracion_branding
+                    WHERE (tipo_id = %s OR id = %s) AND publicado = 1
+                    ORDER BY version DESC
                     LIMIT 1
                     """,
-                    (branding_credential_id,)
+                    (branding_credential_id, branding_credential_id)
                 )
-                
                 row = await cursor.fetchone()
-                return row
                 
+                if not row:
+                    await cursor.execute(
+                        """
+                        SELECT
+                            id, tipo_id, version, publicado,
+                            version AS version_publicada,
+                            logo, patron, color_fondo, color_letra, fuente_letra,
+                            usuario_creacion_id,
+                            DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
+                        FROM tn_tarjetavirtual_configuracion_branding
+                        WHERE tipo_id = %s OR id = %s
+                        ORDER BY version DESC
+                        LIMIT 1
+                        """,
+                        (branding_credential_id, branding_credential_id)
+                    )
+                    row = await cursor.fetchone()
+                    
+                return row
         except Exception as e:
             print(f"Error al obtener branding publicado: {e}")
-            return None
+            raise e
         finally:
             conn.close()
 
     async def update_branding_credentials(self, branding_id: int, update_data: Dict[str, Any], client_id: Optional[int] = None) -> bool:
-        conn = None
-        cursor = None
-        try:
-            conn = await get_client_connection(client_id)
-            cursor = await conn.cursor()
-            
-            await cursor.execute("START TRANSACTION")
-            
-            await cursor.execute(
-                "SELECT version_actual, idCliente FROM tn_tarjetavirtual_configuracion_branding WHERE id = %s",
-                (branding_id,)
-            )
-            result = await cursor.fetchone()
-            if not result:
-                raise ValueError(f"Branding con ID {branding_id} no encontrado")
-            
-            current_version = result[0]
-            new_version = current_version + 1
-            usuario_creacion = update_data.get("usuario_creacion_id")
-                        
-            await cursor.execute(
-                """
-                UPDATE tn_tarjetavirtual_configuracion_branding 
-                SET version_actual = %s,
-                    version_publicada = COALESCE(%s, version_publicada),
-                    logo = COALESCE(%s, logo),
-                    patron = COALESCE(%s, patron),
-                    color_fondo = COALESCE(%s, color_fondo),
-                    color_letra = COALESCE(%s, color_letra),
-                    fuente_letra = COALESCE(%s, fuente_letra),
-                    usuario_creacion_id = COALESCE(%s, usuario_creacion_id)
-                WHERE id = %s
-                """,
-                (
-                    new_version,
-                    update_data.get("version_publicada"),
-                    update_data.get("logo"),
-                    update_data.get("patron"),
-                    update_data.get("color_fondo"),
-                    update_data.get("color_letra"),
-                    update_data.get("fuente_letra"),
-                    update_data.get("usuario_creacion_id"),
-                    branding_id
-                )
-            )
-            
-            await cursor.execute(
-                """
-                INSERT INTO tn_tarjetavirtual_configuracion_branding_historico (
-                    idCliente, configuracion_branding_id, version, logo, patron, color_fondo,
-                    color_letra, fuente_letra, usuario_creacion_id
-                ) SELECT 
-                    idCliente, id, %s, logo, patron, color_fondo,
-                    color_letra, fuente_letra, %s
-                FROM tn_tarjetavirtual_configuracion_branding
-                WHERE id = %s
-                """,
-                (new_version, usuario_creacion, branding_id)
-            )
-            
-            await cursor.execute("COMMIT")
-            return True
-            
-        except Exception as e:
-            if cursor:
-                await cursor.execute("ROLLBACK")
-            raise e
-        finally:
-            if cursor:
-                await cursor.close()
-            if conn:
-                conn.close() 
-
+        return await self.create_branding_credentials(update_data, client_id) > 0
 
     async def validate_version_exists(self, branding_id: int, version: int, client_id: Optional[int] = None) -> bool:
-        """Valida si una versión específica existe en el histórico"""
+        """Valida si una versión específica existe en la tabla de branding"""
         conn = await get_client_connection(client_id)
         try:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute(
                     """
                     SELECT COUNT(*) as count
-                    FROM tn_tarjetavirtual_configuracion_branding_historico
-                    WHERE configuracion_branding_id = %s AND version = %s
+                    FROM tn_tarjetavirtual_configuracion_branding
+                    WHERE (tipo_id = %s OR id = %s) AND version = %s
                     """,
-                    (branding_id, version)
+                    (branding_id, branding_id, version)
                 )
                 result = await cursor.fetchone()
                 return result['count'] > 0
@@ -655,25 +655,25 @@ class TarjetasRepository:
                 version_to_publish = data.get('version_publicada')
                 
                 if not await self.validate_version_exists(branding_id, version_to_publish, client_id):
-                    raise ValueError(f"La versión {version_to_publish} no existe en el histórico (MS-3858)")
+                    raise ValueError(f"La versión {version_to_publish} no existe en el registro (MS-3858)")
                 
                 await cursor.execute(
                     """
                     UPDATE tn_tarjetavirtual_configuracion_branding
-                    SET 
-                        version_publicada = %s,
-                        updated_at = NOW()
-                    WHERE id = %s
+                    SET publicado = 0
+                    WHERE tipo_id = %s OR id = %s
                     """,
-                    (
-                        data.get('version_publicada'),
-                        branding_id
-                    )
+                    (branding_id, branding_id)
                 )
                 
-                if cursor.rowcount == 0:
-                    raise ValueError(f"No se pudo actualizar el branding con ID {branding_id}")
-                    
+                await cursor.execute(
+                    """
+                    UPDATE tn_tarjetavirtual_configuracion_branding
+                    SET publicado = 1, updated_at = NOW()
+                    WHERE (tipo_id = %s OR id = %s) AND version = %s
+                    """,
+                    (branding_id, branding_id, version_to_publish)
+                )
         finally:
             conn.close()
 
@@ -695,12 +695,10 @@ class TarjetasRepository:
                 await cursor.execute(
                     """
                     SELECT COUNT(*) AS total
-                    FROM tn_tarjetavirtual_configuracion_branding_historico tcbh
-                    INNER JOIN tn_tarjetavirtual_configuracion_branding ttc
-                        ON ttc.id = tcbh.configuracion_branding_id
-                    WHERE tcbh.configuracion_branding_id = %s
+                    FROM tn_tarjetavirtual_configuracion_branding
+                    WHERE tipo_id = %s OR id = %s
                     """,
-                    (branding_id,)
+                    (branding_id, branding_id)
                 )
                 total_row = await cursor.fetchone()
                 total = total_row["total"] if total_row else 0
@@ -709,21 +707,22 @@ class TarjetasRepository:
                 await cursor.execute(
                     """
                     SELECT
-                        tcbh.id,
-                        tcbh.version,
-                        DATE_FORMAT(tcbh.created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted,
-                        CASE 
-                            WHEN ttc.version_publicada = tcbh.version THEN true
-                            ELSE false
-                        END AS publicado
-                    FROM tn_tarjetavirtual_configuracion_branding_historico tcbh
-                    INNER JOIN tn_tarjetavirtual_configuracion_branding ttc
-                        ON ttc.id = tcbh.configuracion_branding_id
-                    WHERE tcbh.configuracion_branding_id = %s
-                    ORDER BY tcbh.version DESC
+                        id,
+                        tipo_id,
+                        version,
+                        publicado,
+                        logo,
+                        patron,
+                        color_fondo,
+                        color_letra,
+                        fuente_letra,
+                        DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
+                    FROM tn_tarjetavirtual_configuracion_branding
+                    WHERE tipo_id = %s OR id = %s
+                    ORDER BY version DESC
                     LIMIT %s OFFSET %s
                     """,
-                    (branding_id, page_size, offset)
+                    (branding_id, branding_id, page_size, offset)
                 )
                 rows = await cursor.fetchall()
 
@@ -840,8 +839,19 @@ class TarjetasRepository:
                 )
                 
                 await cursor.execute(query, values)
+                new_id = cursor.lastrowid
+                
+                try:
+                    hist_query = """
+                        INSERT INTO tn_tarjetavirtual_estados_historial (tarjeta_id, estado, descripcion, realizado_por)
+                        VALUES (%s, %s, %s, %s)
+                    """
+                    await cursor.execute(hist_query, (new_id, "Emitida", "Credencial generada correctamente.", "Sistema JCC"))
+                except Exception as e_hist:
+                    print(f"[TarjetasRepository] Warning: No se pudo crear historial inicial: {e_hist}")
+
                 await conn.commit()
-                return cursor.lastrowid
+                return new_id
                 
         except Exception as e:
             print(f"[TarjetasRepository] Error al crear contador: {e}")
@@ -878,27 +888,38 @@ class TarjetasRepository:
                 """
                 
                 values = (
-                    data.get("no_expd"),
-                    data.get("razon_social"),
-                    data.get("nit"),
-                    data.get("tipo_sociedad"),
+                    data.get("no_expd") or 0,
+                    data.get("razon_social") or "Sin Razón Social",
+                    data.get("nit") or "",
+                    data.get("tipo_sociedad") or "SOCIEDAD DE CONTADORES",
                     data.get("inscripcion"),
                     data.get("fecha_radicacion"),
-                    data.get("estado_sociedad", "ACTIVO"),
+                    data.get("estado_sociedad") or "ACTIVO",
                     data.get("resolucion"),
                     data.get("fecha_resolucion"),
-                    data.get("acta_jcc"),
+                    str(data.get("acta_jcc")) if data.get("acta_jcc") is not None else None,
                     data.get("estado_solicitud"),
                     data.get("tipo_solicitud"),
                     data.get("fecha_emision") or datetime.now(),
-                    data.get("tipo_asociado_id"),
-                    data.get("estado_tarjeta_id"),
+                    data.get("tipo_asociado_id") or 1,
+                    data.get("estado_tarjeta_id") or 1,
                     data.get("foto")
                 )
                 
                 await cursor.execute(query, values)
+                new_id = cursor.lastrowid
+                
+                try:
+                    hist_query = """
+                        INSERT INTO tn_tarjetavirtual_estados_historial (tarjeta_id, estado, descripcion, realizado_por)
+                        VALUES (%s, %s, %s, %s)
+                    """
+                    await cursor.execute(hist_query, (new_id, "Emitida", "Credencial generada correctamente.", "Sistema JCC"))
+                except Exception as e_hist:
+                    print(f"[TarjetasRepository] Warning: No se pudo crear historial inicial: {e_hist}")
+
                 await conn.commit()
-                return cursor.lastrowid
+                return new_id
                 
         except Exception as e:
             print(f"[TarjetasRepository] Error al crear sociedad: {e}")
@@ -958,6 +979,8 @@ class TarjetasRepository:
         fecha_hasta: Optional[str] = None,
         endpoint: Optional[str] = None,
         tipo: Optional[str] = None,
+        texto: Optional[str] = None,
+        cambiar_estado: Optional[str] = None,
     ) -> Dict[str, Any]:
         
         page_size = min(max(page_size, 1), 100)
@@ -973,22 +996,38 @@ class TarjetasRepository:
                 where_conditions = ["tapi.client_id = %s"]
                 params = [client_id]
                 
-                if fecha_desde:
+                if fecha_desde and fecha_desde.strip():
                     where_conditions.append("tapi.fecha_creacion >= %s")
-                    params.append(fecha_desde)
+                    params.append(fecha_desde.strip())
                 
-                if fecha_hasta:
+                if fecha_hasta and fecha_hasta.strip():
                     where_conditions.append("tapi.fecha_creacion <= %s")
-                    params.append(fecha_hasta)
+                    params.append(fecha_hasta.strip())
                 
-                # 👇 CAMBIO: usar LIKE y normalizar
-                if endpoint and endpoint != "Todos":
+                if endpoint and endpoint.strip() and endpoint != "Todos":
+                    clean_ep = endpoint.strip().strip('/')
                     where_conditions.append("ttt.nombre LIKE %s")
-                    params.append(f"%{endpoint.strip('/')}%")
+                    params.append(f"%{clean_ep}%")
                 
-                if tipo and tipo != "Todos":
-                    where_conditions.append("ttasociado.nombre LIKE %s")
-                    params.append(f"%{tipo}%")
+                if tipo and tipo.strip() and tipo != "Todos":
+                    clean_tipo = tipo.strip()
+                    where_conditions.append("(ttasociado.nombre LIKE %s OR tapi.parametros_peticion LIKE %s)")
+                    params.append(f"%{clean_tipo}%")
+                    params.append(f'%"tipo": "{clean_tipo}"%')
+                
+                if texto and texto.strip():
+                    t = f"%{texto.strip()}%"
+                    where_conditions.append("(tapi.parametros_peticion LIKE %s OR tapi.cuerpo_respuesta_peticion LIKE %s OR tapi.url LIKE %s)")
+                    params.extend([t, t, t])
+
+                if cambiar_estado is not None and cambiar_estado.strip() != "" and cambiar_estado != "Todos":
+                    st_val = cambiar_estado.strip().lower()
+                    if st_val == "true":
+                        where_conditions.append("(tapi.parametros_peticion LIKE %s OR JSON_UNQUOTE(JSON_EXTRACT(tapi.parametros_peticion, '$.cambiarEstado')) = 'true')")
+                        params.append('%"cambiarEstado": true%')
+                    elif st_val == "false":
+                        where_conditions.append("(tapi.parametros_peticion LIKE %s OR JSON_UNQUOTE(JSON_EXTRACT(tapi.parametros_peticion, '$.cambiarEstado')) = 'false')")
+                        params.append('%"cambiarEstado": false%')
                 
                 where_clause = " AND ".join(where_conditions)
                 
@@ -998,8 +1037,8 @@ class TarjetasRepository:
                 count_query = f"""
                     SELECT COUNT(*) as total
                     FROM tn_tarjetavirtual_auditoria_api tapi
-                    INNER JOIN tn_tarjetavirtual_tipos ttt ON tapi.tipo_id = ttt.id
-                    INNER JOIN tn_tarjetavirtual_tipos_asociados ttasociado ON tapi.tipo_asociado_id = ttasociado.id
+                    LEFT JOIN tn_tarjetavirtual_tipos ttt ON tapi.tipo_id = ttt.id
+                    LEFT JOIN tn_tarjetavirtual_tipos_asociados ttasociado ON tapi.tipo_asociado_id = ttasociado.id
                     WHERE {where_clause};
                 """
                 await cursor.execute(count_query, tuple(params))
@@ -1024,6 +1063,7 @@ class TarjetasRepository:
                 
                 data_query = f"""
                     SELECT
+                        tapi.id,
                         DATE_FORMAT(tapi.fecha_creacion, '%%Y-%%m-%%d %%H:%%i') AS fecha_hora,
                         ttt.nombre AS endpoint,
                         tapi.metodo,
@@ -1033,8 +1073,8 @@ class TarjetasRepository:
                         tapi.parametros_peticion,
                         tapi.cuerpo_respuesta_peticion
                     FROM tn_tarjetavirtual_auditoria_api tapi
-                    INNER JOIN tn_tarjetavirtual_tipos ttt ON tapi.tipo_id = ttt.id
-                    INNER JOIN tn_tarjetavirtual_tipos_asociados ttasociado ON tapi.tipo_asociado_id = ttasociado.id
+                    LEFT JOIN tn_tarjetavirtual_tipos ttt ON tapi.tipo_id = ttt.id
+                    LEFT JOIN tn_tarjetavirtual_tipos_asociados ttasociado ON tapi.tipo_asociado_id = ttasociado.id
                     WHERE {where_clause}
                     ORDER BY tapi.fecha_creacion DESC
                     LIMIT %s OFFSET %s;
@@ -1068,6 +1108,6 @@ class TarjetasRepository:
                 
         except Exception as e:
             print(f"Error al obtener el listado de auditoría API: {e}")
-            return None
+            raise e
         finally:
             conn.close()

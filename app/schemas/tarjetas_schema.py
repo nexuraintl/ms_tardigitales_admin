@@ -35,7 +35,7 @@ class ConsultaMatriculaResponseSchema(BaseModel):
 
 
 class BrandingCredentialsCreateSchema(BaseModel):
-    idCliente: int = Field(..., description="ID del cliente es requerido")
+    idCliente: Optional[int] = Field(None, description="ID del cliente (opcional)")
     version_actual: int = Field(1, description="Versión actual")
     version_publicada: Optional[int] = None
     logo: Optional[str] = None  # Ya NO es UploadFile, será base64 string
@@ -83,7 +83,7 @@ class ContadorCreateSchema(BaseModel):
     seccional: Optional[str] = Field(None, description="Seccional")
     correo: Optional[str] = Field(None, description="Correo del contador")
     fecha_emision: Optional[datetime] = Field(None, description="Fecha de emisión")
-    tipo_asociado_id: int = Field(..., description="ID del tipo de asociado (primeraVez=1, duplicado=2, sustitucion=3)")
+    tipo_asociado_id: int = Field(..., description="ID del tipo de asociado (primeraVez=1, duplicado=2, sustitucion=3, modificacion=4)")
     estado_tarjeta_id: int = Field(..., description="ID del estado de la tarjeta (Activa=1, Emitida=2, Cancelada=3)")
     foto: Optional[str] = Field(None, description="Foto contador")
 
@@ -101,10 +101,10 @@ class SociedadCreateSchema(BaseModel):
     estado_solicitud: Optional[str] = Field(None, description="Estado de la solicitud")
     tipo_solicitud: Optional[str] = Field(None, description="Tipo de solicitud")
     fecha_emision: Optional[datetime] = Field(None, description="Fecha de emisión")
-    tipo_asociado_id: int = Field(..., description="ID del tipo de asociado (primeraVez=1, duplicado=2, sustitucion=3)")
+    tipo_asociado_id: int = Field(..., description="ID del tipo de asociado (primeraVez=1, duplicado=2, sustitucion=3, modificacion=4)")
     estado_tarjeta_id: int = Field(..., description="ID del estado de la tarjeta (Activa=1, Emitida=2, Cancelada=3)")
     foto: Optional[str] = Field(None, description="Foto sociedad")
 
 class ConsultaTarjetaSchema(BaseModel):
     documento: str = Field(..., description="Número de documento de identificación")
-    tipo: Optional[str] = Field("", description="Tipo de consulta ('primeraVez', 'duplicado', 'sustitucion', etc.)")
+    tipo: Optional[str] = Field("", description="Tipo de consulta ('primeraVez', 'duplicado', 'sustitucion', 'modificacion', etc.)")
