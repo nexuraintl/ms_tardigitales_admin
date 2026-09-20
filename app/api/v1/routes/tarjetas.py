@@ -52,7 +52,7 @@ async def list_tarjetas(
 
 @router.get("/consult-registry")
 async def consult_registry(
-    documento: str = Query(..., description="Número de documento de identidad o NIT a consultar"),
+    documento: str = Query(..., min_length=3, description="Número de documento de identidad o NIT a consultar (obligatorio)"),
     tipo_tarjeta: str = Query("contadores", description="Tipo de registro ('contadores' o 'sociedades')"),
     tipo: Optional[str] = Query("", description="Tipo de consulta ('primeraVez', 'modificacion', etc.)"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
@@ -95,6 +95,13 @@ async def update_validador_config(
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
 ):
     return await service.save_validador_config(data, client_id)
+
+@router.get("/columns-config")
+async def get_columns_config(
+    tipo_tarjeta: str = Query("contadores", description="Tipo de tarjeta ('contadores' o 'sociedades')"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+):
+    return await service.get_columns_config(tipo_tarjeta, client_id)
 
 
 # Branding de credenciales

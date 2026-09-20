@@ -7,8 +7,7 @@ from app.repositories.tarjetas_repository import TarjetasRepository
 from app.schemas.tarjetas_schema import TarjetaCreateSchema, ValidadorConfigSchema, BrandingCredentialsCreateSchema, BrandingCredentialsUpdateSchema, AuditoriaApiCreateSchema, ContadorCreateSchema, SociedadCreateSchema, ConsultaMatriculaResponseSchema
 from app.integrations.jcc_client import JccClient
 from app.services.auditoria_service import AuditoriaService
-from app.utils.mappers import ContadorMapper,SociedadMapper
-from app.constants import TIPO_ASOCIADO_MAP, TIPO_ESTADO_TARJETA_MAP , TipoEstadoTarjeta, TipoAsociado
+from app.constants import TipoTarjeta
 
 class TarjetasService:
 
@@ -32,7 +31,7 @@ class TarjetasService:
             if not documento or not str(documento).strip():
                 raise HTTPException(
                     status_code=400,
-                    detail="El número de documento o NIT es requerido para la consulta (MS-3833)."
+                    detail="El número de documento de identidad o NIT es estrictamente requerido para la consulta."
                 )
 
             # Consultar API de la JCC a través del módulo de integraciones
@@ -41,10 +40,23 @@ class TarjetasService:
                 tipo_tarjeta=tipo_tarjeta,
                 tipo=tipo
             )
+
+            if not result or not result.get("encontrado") or not result.get("data"):
+                raise HTTPException(
+                    status_code=404,
+                    detail="No se encontró ningún registro oficial para el documento especificado en la JCC (MS-3835)."
+                )
+
+            final_response = {
+                "status": "success",
+                "data": result["data"]
+            }
+
+            return final_response
         except HTTPException:
             raise
         except Exception as e:
-            print(f"[TarjetasService] Error al consultar matrícula/registro JCC: {e}")
+            print(f"[TarjetasService] Error al consultar registro JCC: {e}")
             raise HTTPException(
                 status_code=500,
                 detail="Error al consultar el registro institucional en la API de la JCC (MS-3834)."
@@ -128,22 +140,7 @@ class TarjetasService:
                 detail="No fue posible consultar la tarjeta solicitada (MS-3830)."
             )
 
-    async def create_tarjeta(self, data: TarjetaCreateSchema, client_id: Optional[int] = None) -> Dict[str, Any]:
-        try:
-            new_id = await self.repository.create(data.dict(), client_id)
-            return {
-                "id": new_id,
-                "status": "success",
-                "message": "Tarjeta digital emitida exitosamente."
-            }
-        except HTTPException:
-            raise
-        except Exception as e:
-            print(f"[TarjetasService] Error al crear tarjeta: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="No fue posible completar la emisión de la tarjeta (MS-3831)."
-            )
+
 
     async def create_tarjeta_contador(
         self,
@@ -159,81 +156,65 @@ class TarjetasService:
                 tipo=tipo,
             )
 
-            disponibles = consulta.get("disponibles", [])
-            foto_base64 = consulta.get("pdf",None)
-            
-            if not disponibles:
+            item = consulta.get("data")
+            if not item or not consulta.get("encontrado"):
                 return {
                     "status": "no_data",
                     "message": "No se encontraron registros disponibles en el JCC o los datos no cumplen los criterios."
                 }
 
-            estado_tarjeta = "Emitida"
-            tipo_asociado_id = int(TIPO_ASOCIADO_MAP.get(tipo, TipoAsociado.PRIMERA_VEZ))
-            estado_tarjeta_id = int(TIPO_ESTADO_TARJETA_MAP.get(estado_tarjeta, TipoEstadoTarjeta.EMITIDA))
+            tipo_asociado_key = tipo if tipo else "primeraVez"
+            estado_tarjeta = "Vigente"
 
-            insertados: List[int] = []
-            omitidos: List[Dict[str, Any]] = []
-            errores: List[Dict[str, Any]] = []
+            no_documento = item.get("no_documento")
 
-            for item in disponibles:
-
-                no_documento = item.get("NO_DOCUMENTO")
-
-                existe_contador = await self.repository.exists_accountant(no_documento, client_id)
-                if existe_contador:
-                    omitidos.append({
-                        "no_documento": no_documento,
-                        "message": f"El contador con numero identificacion {no_documento} ya fue creada previamente.",
-                    })
-                    continue
-
-                try:
-                    schema = ContadorMapper.from_jcc(
-                        item, tipo_asociado_id, estado_tarjeta_id, foto_base64
-                    )
-                    
-                    new_id = await self.repository.create_contadores(
-                        schema.dict(), client_id
-                    )
-                    insertados.append(new_id)
-                    
-                except Exception as e:
-                    print(f"[TarjetasService] Error insertando contador: {e}")
-                    errores.append(
-                        {"item": item.get("NO_TARJETA", "Desconocido"), "error": str(e)}
-                    )
-
-
-            if not insertados and omitidos and not errores:
-                no_documents = ", ".join(str(o["no_documento"]) for o in omitidos)
+            existe_contador = await self.repository.exists_accountant(no_documento, client_id)
+            if existe_contador:
                 raise HTTPException(
                     status_code=409,
                     detail={
                         "status": "conflict",
-                        "message": f"El contador con numero documento {no_documents} ya está registrada previamente (MS-3857)."
+                        "message": f"El contador con número documento {no_documento} ya está registrado previamente (MS-3857)."
                     },
                 )
 
-            if not insertados and errores:
+            try:
+                contador_data = {
+                    "no_tarjeta": item.get("no_tarjeta", ""),
+                    "nombres": item.get("nombres", ""),
+                    "primer_apellido": item.get("primer_apellido", ""),
+                    "segundo_apellido": item.get("segundo_apellido", ""),
+                    "no_expd": item.get("no_expd", 0),
+                    "tipo_documento": item.get("tipo_documento", "CC"),
+                    "no_documento": item.get("no_documento", documento),
+                    "universidad": item.get("universidad", ""),
+                    "estado_contador": item.get("estado_contador", "ACTIVO"),
+                    "resolucion": item.get("resolucion", ""),
+                    "fecha_estado": item.get("fecha_estado"),
+                    "fecha_radicacion": item.get("fecha_radicacion"),
+                    "fecha_resolucion": item.get("fecha_resolucion"),
+                    "acta_jcc": item.get("acta_jcc"),
+                    "fecha_grado": item.get("fecha_grado"),
+                    "seccional": item.get("seccional", ""),
+                    "correo": item.get("correo", ""),
+                    "fecha_emision": datetime.now(),
+                    "tipo_asociado": tipo_asociado_key,
+                    "estado": estado_tarjeta,
+                    "foto": item.get("pdf")
+                }
+                
+                new_id = await self.repository.create_contadores(contador_data, client_id)
+                return {
+                    "status": "success",
+                    "id": new_id,
+                    "message": "Tarjeta digital de contador emitida exitosamente."
+                }
+            except Exception as e:
+                print(f"[TarjetasService] Error insertando contador: {e}")
                 raise HTTPException(
                     status_code=500,
                     detail="Error en la base de datos al registrar la tarjeta (MS-3831).",
                 )
-
-            status = "partial" if errores else "success"
-            if len(insertados) == 1 and not errores:
-                msg = "Tarjeta digital de contador emitida exitosamente."
-            else:
-                msg = f"Se emitieron {len(insertados)} tarjetas de contador exitosamente."
-                
-            if errores:
-                msg += f" Hubo un error en la base de datos al procesar {len(errores)} registro(s)."
-            
-            return {
-                "status": status,
-                "message": msg
-            }
 
         except HTTPException:
             raise
@@ -258,79 +239,62 @@ class TarjetasService:
                 tipo=tipo,
             )
 
-            disponibles = consulta.get("disponibles", [])
-            foto_base64 = consulta.get("pdf",None)
-            
-            if not disponibles:
+            item = consulta.get("data")
+            if not item or not consulta.get("encontrado"):
                 return {
                     "status": "no_data",
                     "message": "No se encontraron registros disponibles en el JCC o los datos no cumplen los criterios."
                 }
             
-            estado_tarjeta = "Emitida"
-            tipo_asociado_id = int(TIPO_ASOCIADO_MAP.get(tipo, TipoAsociado.PRIMERA_VEZ))
-            estado_tarjeta_id = int(TIPO_ESTADO_TARJETA_MAP.get(estado_tarjeta, TipoEstadoTarjeta.EMITIDA))
+            tipo_asociado_key = tipo if tipo else "primeraVez"
+            estado_tarjeta = "Vigente"
 
-            insertados: List[int] = []
-            omitidos: List[Dict[str, Any]] = []
-            errores: List[Dict[str, Any]] = []
+            nit = item.get("nit") or documento
 
-            for item in disponibles:
-                nit = item.get("NIT")
-
-                existe_sociedad = await self.repository.exists_society(nit, client_id)
-                if existe_sociedad:
-                    omitidos.append({
-                        "nit": nit,
-                        "message": f"La sociedad con NIT {nit} ya fue creada previamente.",
-                    })
-                    continue
-
-                try:
-                    schema = SociedadMapper.from_jcc(
-                        item, tipo_asociado_id, estado_tarjeta_id, foto_base64
-                    )
-                    
-                    new_id = await self.repository.create_sociedades(
-                        schema.dict(), client_id
-                    )
-                    insertados.append(new_id)
-                    
-                except Exception as e:
-                    print(f"[TarjetasService] Error insertando sociedad: {e}")
-                    errores.append(
-                        {"item": item.get("NO_EXPD", "Desconocido"), "error": str(e)}
-                    )
-
-            if not insertados and omitidos and not errores:
-                nits = ", ".join(str(o["nit"]) for o in omitidos)
+            existe_sociedad = await self.repository.exists_society(nit, client_id)
+            if existe_sociedad:
                 raise HTTPException(
                     status_code=409,
                     detail={
                         "status": "conflict",
-                        "message": f"La sociedad con NIT {nits} ya está(n) registrada(s) previamente (MS-3857)."
+                        "message": f"La sociedad con NIT {nit} ya está registrada previamente (MS-3857)."
                     },
                 )
 
-            if not insertados and errores:
+            try:
+                sociedad_data = {
+                    "no_expd": item.get("no_expd", 0),
+                    "razon_social": item.get("razon_social", ""),
+                    "nit": nit,
+                    "tipo_sociedad": item.get("tipo_sociedad", "SOCIEDAD DE CONTADORES"),
+                    "inscripcion": item.get("inscripcion"),
+                    "fecha_radicacion": item.get("fecha_radicacion"),
+                    "estado_sociedad": item.get("estado_sociedad", "ACTIVO"),
+                    "resolucion": item.get("resolucion", ""),
+                    "fecha_resolucion": item.get("fecha_resolucion"),
+                    "acta_jcc": str(item.get("acta_jcc")) if item.get("acta_jcc") is not None else None,
+                    "estado_solicitud": item.get("estado_solicitud"),
+                    "tipo_solicitud": item.get("tipo_solicitud"),
+                    "correo": item.get("correo", ""),
+                    "representante_legal": item.get("representante_legal", ""),
+                    "fecha_emision": datetime.now(),
+                    "tipo_asociado": tipo_asociado_key,
+                    "estado": estado_tarjeta,
+                    "foto": item.get("pdf")
+                }
+                
+                new_id = await self.repository.create_sociedades(sociedad_data, client_id)
+                return {
+                    "status": "success",
+                    "id": new_id,
+                    "message": "Tarjeta digital de sociedad emitida exitosamente."
+                }
+            except Exception as e:
+                print(f"[TarjetasService] Error insertando sociedad: {e}")
                 raise HTTPException(
                     status_code=500,
                     detail="Error en la base de datos al registrar la tarjeta (MS-3831).",
                 )
-
-            status = "partial" if errores else "success"
-            if len(insertados) == 1 and not errores:
-                msg = "Tarjeta digital de sociedad emitida exitosamente."
-            else:
-                msg = f"Se emitieron {len(insertados)} tarjetas de sociedad exitosamente."
-                
-            if errores:
-                msg += f" Hubo un error en la base de datos al procesar {len(errores)} registro(s)."
-            
-            return {
-                "status": status,
-                "message": msg
-            }
 
         except HTTPException:
             raise
@@ -379,6 +343,22 @@ class TarjetasService:
             raise HTTPException(
                 status_code=500,
                 detail="No fue posible guardar la configuración del validador (MS-3851)."
+            )
+
+    async def get_columns_config(self, tipo_tarjeta: str = "contadores", client_id: Optional[int] = None) -> Dict[str, Any]:
+        try:
+            cols = await self.repository.get_columns_config(tipo_tarjeta, client_id)
+            return {
+                "status": "success",
+                "data": cols
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[TarjetasService] Error al cargar configuración de columnas: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="No fue posible cargar la configuración de columnas (MS-3858)."
             )
 
     async def create_or_update_branding_credentials(self, data: BrandingCredentialsCreateSchema, client_id: Optional[int] = None,) -> Dict[str, Any]:

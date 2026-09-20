@@ -40,11 +40,7 @@ class TarjetasRepository:
                 # CONSTRUCCIÓN DINÁMICA DE FILTROS Y ORDEN
                 # ==========================================
                 if tipo_tarjeta == "contadores":
-                    base_from = """
-                        FROM tn_tarjetavirtual_contadores ttc 
-                        INNER JOIN tn_tarjetavirtual_tipos_asociados ttta ON ttc.tipo_asociado_id = ttta.id 
-                        INNER JOIN tn_tarjetavirtual_estados_tarjetas ttet ON ttc.estado_tarjeta_id = ttet.id
-                    """
+                    base_from = "FROM tn_tarjetavirtual_contadores ttc"
                     
                     # Whitelist de columnas permitidas para ordenar (evita SQL Injection)
                     columnas_permitidas = {
@@ -87,11 +83,7 @@ class TarjetasRepository:
                     order_column = columnas_permitidas.get(order_by, "ttc.id")
 
                 elif tipo_tarjeta == "sociedades":
-                    base_from = """
-                        FROM tn_tarjetavirtual_sociedades tts
-                        INNER JOIN tn_tarjetavirtual_tipos_asociados ttta ON tts.tipo_asociado_id = ttta.id 
-                        INNER JOIN tn_tarjetavirtual_estados_tarjetas ttet ON tts.estado_tarjeta_id = ttet.id 
-                    """
+                    base_from = "FROM tn_tarjetavirtual_sociedades tts"
                     
                     columnas_permitidas = {
                         "id": "tts.id",
@@ -151,12 +143,12 @@ class TarjetasRepository:
                             ttc.no_tarjeta,
                             CONCAT(ttc.nombres, " ",ttc.primer_apellido, " ", ttc.segundo_apellido) AS nombre_completo,
                             ttc.no_expd,
-                            ttta.nombre AS tipo_asociado,
+                            ttc.tipo_asociado,
                             DATE_FORMAT(ttc.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision,
                             CONCAT(ttc.tipo_documento, " ", ttc.no_documento) AS documento,
                             ttc.correo,
                             ttc.universidad,
-                            ttet.nombre AS estado_tarjeta,
+                            ttc.estado AS estado_tarjeta,
                             ttc.estado_contador as estado_registro,
                             ttc.resolucion,
                             DATE_FORMAT(ttc.fecha_estado, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_estado,
@@ -174,18 +166,19 @@ class TarjetasRepository:
                             tts.no_expd,
                             tts.razon_social,
                             tts.nit,
-                            ttta.nombre AS tipo_asociado,
+                            tts.tipo_asociado,
                             DATE_FORMAT(tts.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision,
                             tts.tipo_sociedad,
                             tts.inscripcion,
                             DATE_FORMAT(tts.fecha_radicacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_inscripcion,
-                            ttet.nombre AS estado_tarjeta,
+                            tts.estado AS estado_tarjeta,
                             tts.estado_sociedad,
                             tts.resolucion,
                             DATE_FORMAT(tts.fecha_resolucion, '%%Y-%%m-%%d') AS fecha_resolucion,
                             tts.acta_jcc,
                             tts.estado_solicitud,
                             tts.tipo_solicitud,
+                            tts.representante_legal AS representante,
                             tts.foto
                     """
 
@@ -225,7 +218,7 @@ class TarjetasRepository:
                         """
                         SELECT ttc.id,
                             ttc.universidad,
-                            ttta.nombre AS tipo_asociado,
+                            ttc.tipo_asociado,
                             CONCAT(ttc.tipo_documento, " ", ttc.no_documento) AS documento,
                             ttc.correo,
                             DATE_FORMAT(ttc.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision,
@@ -233,13 +226,9 @@ class TarjetasRepository:
                             CONCAT(ttc.nombres, " ",ttc.primer_apellido, " ", ttc.segundo_apellido) AS nombre_completo,
                             ttc.no_tarjeta,
                             ttc.estado_contador,
-                            ttet.nombre AS estado_tarjeta,
+                            ttc.estado AS estado_tarjeta,
                             ttc.foto
                         FROM tn_tarjetavirtual_contadores ttc 
-                        INNER JOIN tn_tarjetavirtual_tipos_asociados ttta 
-                        ON ttc.tipo_asociado_id = ttta.id 
-                        INNER JOIN tn_tarjetavirtual_estados_tarjetas ttet 
-                        ON ttc.estado_tarjeta_id = ttet.id
                         WHERE ttc.id = %s
                         ORDER BY ttc.id DESC
                         """,
@@ -253,16 +242,13 @@ class TarjetasRepository:
                             tts.razon_social,
                             tts.resolucion,
                             DATE_FORMAT(tts.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision,
-                            ttta.nombre AS tipo_asociado,
+                            tts.tipo_asociado,
                             tts.nit,
-                            ttet.nombre AS estado_tarjeta,
+                            tts.estado AS estado_tarjeta,
                             tts.estado_sociedad,
+                            tts.representante_legal AS representante,
                             tts.foto  
                         FROM tn_tarjetavirtual_sociedades tts
-                        INNER JOIN tn_tarjetavirtual_tipos_asociados ttta 
-                        ON tts.tipo_asociado_id = ttta.id 
-                        INNER JOIN tn_tarjetavirtual_estados_tarjetas ttet 
-                        ON tts.estado_tarjeta_id = ttet.id
                         WHERE tts.id = %s 
                         ORDER BY tts.id DESC
                         """,
@@ -271,34 +257,6 @@ class TarjetasRepository:
                 else:
                     return []
                 return await cursor.fetchone()
-        finally:
-            conn.close()
-
-    async def create(self, tarjeta_data: Dict[str, Any], client_id: Optional[int] = None) -> int:
-        conn = await get_client_connection(client_id)
-        try:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    """
-                    INSERT INTO tn_tarjetavirtual_tarjetas (
-                        tipo_tarjeta, codigo, expediente, solicitante, documento,
-                        matricula, correo, representante, tarjeta, fecha
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        tarjeta_data.get("tipo_tarjeta") or tarjeta_data.get("tipoTarjeta", "contadores"),
-                        tarjeta_data.get("codigo", ""),
-                        tarjeta_data.get("expediente", 0),
-                        tarjeta_data.get("solicitante") or tarjeta_data.get("nombreTitular", ""),
-                        tarjeta_data.get("documento") or tarjeta_data.get("identificacion", ""),
-                        tarjeta_data.get("matricula") or tarjeta_data.get("numeroTarjeta", ""),
-                        tarjeta_data.get("correo", ""),
-                        tarjeta_data.get("representante", None),
-                        tarjeta_data.get("tarjeta") or tarjeta_data.get("estado", "Activa"),
-                        tarjeta_data.get("fecha", None)
-                    )
-                )
-                return cursor.lastrowid
         finally:
             conn.close()
 
@@ -348,7 +306,7 @@ class TarjetasRepository:
                 if tipo and tipo.lower() == 'sociedad':
                     await cursor.execute(
                         """
-                        SELECT id, no_expd AS expediente, nit AS documento, razon_social AS solicitante, 'Activa' AS tarjeta, foto
+                        SELECT id, no_expd AS expediente, nit AS documento, razon_social AS solicitante, representante_legal AS representante, 'Activa' AS tarjeta, foto
                         FROM tn_tarjetavirtual_sociedades WHERE id = %s
                         """,
                         (tarjeta_id,)
@@ -411,7 +369,7 @@ class TarjetasRepository:
                         val_numero_identificacion,
                         val_codigo_tarjeta,
                         val_estado
-                    FROM tn_tarjetavirtual_validador_config
+                    FROM tn_tarjetavirtual_config_validador
                     WHERE client_id = %s
                     LIMIT 1
                     """,
@@ -442,7 +400,7 @@ class TarjetasRepository:
         try:
             async with conn.cursor() as cursor:
                 await cursor.execute(
-                    "SELECT id FROM tn_tarjetavirtual_validador_config WHERE client_id = %s LIMIT 1",
+                    "SELECT id FROM tn_tarjetavirtual_config_validador WHERE client_id = %s LIMIT 1",
                     (client_id,)
                 )
                 exists = await cursor.fetchone()
@@ -457,7 +415,7 @@ class TarjetasRepository:
                 if exists:
                     await cursor.execute(
                         """
-                        UPDATE tn_tarjetavirtual_validador_config SET
+                        UPDATE tn_tarjetavirtual_config_validador SET
                             val_foto = %s,
                             val_nombres = %s,
                             val_matricula = %s,
@@ -472,7 +430,7 @@ class TarjetasRepository:
                 else:
                     await cursor.execute(
                         """
-                        INSERT INTO tn_tarjetavirtual_validador_config (
+                        INSERT INTO tn_tarjetavirtual_config_validador (
                             client_id, val_foto, val_nombres, val_matricula,
                             val_numero_identificacion, val_codigo_tarjeta, val_estado
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -480,6 +438,33 @@ class TarjetasRepository:
                         (client_id, vf, vn, vm, vnum, vc, ve)
                     )
                 return True
+        finally:
+            conn.close()
+
+    async def get_columns_config(self, tipo_tarjeta: str = "contadores", client_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    """
+                    SELECT
+                        key_name AS `key`,
+                        label,
+                        visible_defecto,
+                        es_filtrable,
+                        orden,
+                        tipo_dato
+                    FROM tn_tarjetavirtual_config_columnas_filtro_tarjetas
+                    WHERE tipo_tarjeta = %s
+                    ORDER BY orden ASC
+                    """,
+                    (tipo_tarjeta,)
+                )
+                rows = await cursor.fetchall()
+                for row in rows:
+                    row["visible_defecto"] = bool(row["visible_defecto"])
+                    row["es_filtrable"] = bool(row["es_filtrable"])
+                return rows
         finally:
             conn.close()
 
@@ -817,8 +802,8 @@ class TarjetasRepository:
                         seccional,
                         correo,
                         fecha_emision,
-                        tipo_asociado_id,
-                        estado_tarjeta_id,
+                        tipo_asociado,
+                        estado,
                         foto
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
@@ -846,8 +831,8 @@ class TarjetasRepository:
                     data.get("seccional"),
                     data.get("correo"),
                     data.get("fecha_emision") or datetime.now(),
-                    data.get("tipo_asociado_id"),
-                    data.get("estado_tarjeta_id"),
+                    data.get("tipo_asociado") or data.get("tipo_asociado_id") or "Contador Público",
+                    data.get("estado") or data.get("estado_tarjeta") or "Vigente",
                     data.get("foto")
                 )
                 
@@ -891,12 +876,13 @@ class TarjetasRepository:
                         estado_solicitud,
                         tipo_solicitud,
                         fecha_emision,
-                        tipo_asociado_id,
-                        estado_tarjeta_id,
-                        foto
+                        tipo_asociado,
+                        estado,
+                        foto,
+                        representante_legal
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s
                     )
                 """
                 
@@ -914,9 +900,10 @@ class TarjetasRepository:
                     data.get("estado_solicitud"),
                     data.get("tipo_solicitud"),
                     data.get("fecha_emision") or datetime.now(),
-                    data.get("tipo_asociado_id") or 1,
-                    data.get("estado_tarjeta_id") or 1,
-                    data.get("foto")
+                    data.get("tipo_asociado") or data.get("tipo_asociado_id") or "Sociedad de Contadores Públicos",
+                    data.get("estado") or data.get("estado_tarjeta") or "Vigente",
+                    data.get("foto"),
+                    data.get("representante_legal") or data.get("representante")
                 )
                 
                 await cursor.execute(query, values)
@@ -948,11 +935,11 @@ class TarjetasRepository:
                 query = """
                     INSERT INTO tn_tarjetavirtual_auditoria_api (
                         client_id,
-                        tipo_id,
+                        tipo_tarjeta,
                         metodo,
                         url,
                         fecha_creacion,
-                        tipo_asociado_id,
+                        tipo_asociado,
                         duracion_ms,
                         parametros_peticion,
                         cuerpo_respuesta_peticion
@@ -963,11 +950,11 @@ class TarjetasRepository:
                 
                 values = (
                     data.get("client_id"),
-                    data.get("tipo_id"),
+                    data.get("tipo_tarjeta") or data.get("tipo_id"),
                     data.get("metodo"),
                     data.get("url"),
                     data.get("fecha_creacion") or datetime.now(),
-                    data.get("tipo_asociado_id"),
+                    data.get("tipo_asociado") or data.get("tipo_asociado_id"),
                     data.get("duracion_ms"),
                     json.dumps(data.get("parametros_peticion")) if data.get("parametros_peticion") else None,
                     json.dumps(data.get("cuerpo_respuesta_peticion")) if data.get("cuerpo_respuesta_peticion") else None
@@ -1050,8 +1037,6 @@ class TarjetasRepository:
                 count_query = f"""
                     SELECT COUNT(*) as total
                     FROM tn_tarjetavirtual_auditoria_api tapi
-                    LEFT JOIN tn_tarjetavirtual_tipos ttt ON tapi.tipo_id = ttt.id
-                    LEFT JOIN tn_tarjetavirtual_tipos_asociados ttasociado ON tapi.tipo_asociado_id = ttasociado.id
                     WHERE {where_clause};
                 """
                 await cursor.execute(count_query, tuple(params))
@@ -1078,16 +1063,14 @@ class TarjetasRepository:
                     SELECT
                         tapi.id,
                         DATE_FORMAT(tapi.fecha_creacion, '%%Y-%%m-%%d %%H:%%i') AS fecha_hora,
-                        ttt.nombre AS endpoint,
+                        tapi.tipo_tarjeta AS endpoint,
                         tapi.metodo,
-                        ttasociado.nombre AS tipo,
+                        tapi.tipo_asociado AS tipo,
                         tapi.duracion_ms,
                         tapi.url,
                         tapi.parametros_peticion,
                         tapi.cuerpo_respuesta_peticion
                     FROM tn_tarjetavirtual_auditoria_api tapi
-                    LEFT JOIN tn_tarjetavirtual_tipos ttt ON tapi.tipo_id = ttt.id
-                    LEFT JOIN tn_tarjetavirtual_tipos_asociados ttasociado ON tapi.tipo_asociado_id = ttasociado.id
                     WHERE {where_clause}
                     ORDER BY tapi.fecha_creacion DESC
                     LIMIT %s OFFSET %s;
