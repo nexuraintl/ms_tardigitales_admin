@@ -2,6 +2,19 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 from fastapi import UploadFile, File, Form
 from datetime import datetime
+from enum import Enum
+
+class EstadoTarjetaEnum(str, Enum):
+    EMITIDA = "Emitida"
+    ACTIVA = "Activa"
+    CANCELADA = "Cancelada"
+
+class EstadoRegistroEnum(str, Enum):
+    ACTIVO = "ACTIVO"
+    INACTIVO = "INACTIVO"
+    SUSPENDIDO = "SUSPENDIDO"
+    CANCELADO = "CANCELADO"
+    FALLECIDO = "FALLECIDO"
 
 class TarjetaCreateSchema(BaseModel):
     tipo_tarjeta: Optional[str] = "contadores"
@@ -104,6 +117,7 @@ class SociedadCreateSchema(BaseModel):
     tipo_asociado_id: int = Field(..., description="ID del tipo de asociado (primeraVez=1, duplicado=2, sustitucion=3, modificacion=4)")
     estado_tarjeta_id: int = Field(..., description="ID del estado de la tarjeta (Activa=1, Emitida=2, Cancelada=3)")
     foto: Optional[str] = Field(None, description="Foto sociedad")
+    representante_legal: Optional[str] = Field(None, description="Representante legal de la sociedad")
 
 class ConsultaTarjetaSchema(BaseModel):
     documento: str = Field(..., description="Número de documento de identificación")

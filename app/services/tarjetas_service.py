@@ -1,14 +1,25 @@
 import time
 import base64
 from typing import List, Dict, Any, Optional
-from fastapi import HTTPException, UploadFile
+from fastapi import HTTPException, UploadFile, status
 from datetime import datetime
 from app.repositories.tarjetas_repository import TarjetasRepository
-from app.schemas.tarjetas_schema import TarjetaCreateSchema, ValidadorConfigSchema, BrandingCredentialsCreateSchema, BrandingCredentialsUpdateSchema, AuditoriaApiCreateSchema, ContadorCreateSchema, SociedadCreateSchema, ConsultaMatriculaResponseSchema
+from app.schemas.tarjetas_schema import (
+    TarjetaCreateSchema,
+    ValidadorConfigSchema,
+    BrandingCredentialsCreateSchema,
+    BrandingCredentialsUpdateSchema,
+    AuditoriaApiCreateSchema,
+    ContadorCreateSchema,
+    SociedadCreateSchema,
+    ConsultaMatriculaResponseSchema,
+    EstadoTarjetaEnum,
+    EstadoRegistroEnum
+)
 from app.integrations.jcc_client import JccClient
 from app.services.auditoria_service import AuditoriaService
-from app.utils.mappers import ContadorMapper,SociedadMapper
-from app.constants import TIPO_ASOCIADO_MAP, TIPO_ESTADO_TARJETA_MAP , TipoEstadoTarjeta, TipoAsociado
+from app.constants import TipoTarjeta
+from app.core.exceptions import PipelineException
 
 class TarjetasService:
 
@@ -28,29 +39,42 @@ class TarjetasService:
         start = time.perf_counter()
         result: Optional[Dict[str, Any]] = None
 
-        try:
-            if not documento or not str(documento).strip():
-                raise HTTPException(
-                    status_code=400,
-                    detail="El número de documento o NIT es requerido para la consulta (MS-3833)."
-                )
+        if not documento or not str(documento).strip():
+            raise PipelineException(
+                etapa="PARAMETROS_INVALIDOS",
+                mensaje="El número de documento de identidad o NIT es estrictamente requerido para la consulta.",
+                cliente_id=client_id,
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
 
+        try:
             # Consultar API de la JCC a través del módulo de integraciones
             result = await self.jcc_client.consultar_registro(
                 documento=documento,
                 tipo_tarjeta=tipo_tarjeta,
                 tipo=tipo
             )
-        except HTTPException:
-            raise
         except Exception as e:
-            print(f"[TarjetasService] Error al consultar matrícula/registro JCC: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="Error al consultar el registro institucional en la API de la JCC (MS-3834)."
+            print(f"[TarjetasService] Error al consultar registro JCC: {e}")
+            raise PipelineException(
+                etapa="CONSULTA_API_JCC",
+                mensaje="Error al consultar el registro institucional en la API de la JCC.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                contexto=f"documento={documento}, tipo_tarjeta={tipo_tarjeta}, tipo={tipo}",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-        finally:
-            duracion_ms = int((time.perf_counter() - start) * 1000)
+
+        if not result or not result.get("encontrado") or not result.get("data"):
+            raise PipelineException(
+                etapa="CONSULTA_API_JCC",
+                mensaje="No se encontró ningún registro oficial para el documento especificado en la JCC.",
+                cliente_id=client_id,
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+
+        duracion_ms = int((time.perf_counter() - start) * 1000)
+
         try:
             await self.auditoria.registrar(
                 client_id=client_id,
@@ -66,10 +90,23 @@ class TarjetasService:
                 cuerpo_respuesta=result,
                 duracion_ms=duracion_ms,
             )
+        except PipelineException:
+            raise
         except Exception as e:
             print(f"[TarjetasService] Error guardando auditoría: {e}")
+            raise PipelineException(
+                etapa="REGISTRO_AUDITORIA",
+                mensaje="La consulta a la JCC fue exitosa, pero falló el registro en la tabla de auditoría (jcc_auditoria_api).",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                tabla_afectada="jcc_auditoria_api",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
-        return result
+        return {
+            "status": "success",
+            "data": result["data"]
+        }
 
     async def list_tarjetas(
         self, 
@@ -91,58 +128,52 @@ class TarjetasService:
                 client_id=client_id,
                 page=page,
                 page_size=page_size,
-                filtro_nombre=filtros.get("nombre"),
+                texto=filtros.get("texto"),
                 filtro_documento=filtros.get("documento"),
                 filtro_expediente=filtros.get("expediente"),
                 filtro_resolucion=filtros.get("resolucion"),
                 filtro_acta_jcc=filtros.get("acta_jcc"),
                 filtro_no_tarjeta=filtros.get("no_tarjeta"),
                 filtro_inscripcion=filtros.get("inscripcion"),
+                filtro_correo=filtros.get("correo"),
                 order_by=order_by,
                 order_dir=order_dir
             )
-        except HTTPException:
+        except PipelineException:
             raise
         except Exception as e:
             print(f"[TarjetasService] Error al listar tarjetas: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="No fue posible cargar el listado de tarjetas (MS-3830)."
+            tabla_target = "tn_tarjetavirtual_contadores" if tipo_tarjeta == "contadores" else "tn_tarjetavirtual_sociedades"
+            raise PipelineException(
+                etapa="TABLA_PRINCIPAL",
+                mensaje="No fue posible cargar el listado de tarjetas desde la base de datos de la entidad.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                tabla_afectada=tabla_target,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     async def get_tarjeta(self, tarjeta_id: int, tipo_tarjeta: Optional[str] = None, client_id: Optional[int] = None) -> Dict[str, Any]:
         try:
-            tarjeta = await self.repository.get_by_id(tarjeta_id, tipo_tarjeta ,client_id)
+            tarjeta = await self.repository.get_by_id(tarjeta_id, tipo_tarjeta, client_id)
             if not tarjeta:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Tarjeta digital no encontrada (MS-3806)."
+                raise PipelineException(
+                    etapa="TABLA_PRINCIPAL",
+                    mensaje="Tarjeta digital no encontrada en la base de datos del cliente.",
+                    cliente_id=client_id,
+                    status_code=status.HTTP_404_NOT_FOUND
                 )
             return tarjeta
-        except HTTPException:
+        except PipelineException:
             raise
         except Exception as e:
             print(f"[TarjetasService] Error al obtener tarjeta {tarjeta_id}: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="No fue posible consultar la tarjeta solicitada (MS-3830)."
-            )
-
-    async def create_tarjeta(self, data: TarjetaCreateSchema, client_id: Optional[int] = None) -> Dict[str, Any]:
-        try:
-            new_id = await self.repository.create(data.dict(), client_id)
-            return {
-                "id": new_id,
-                "status": "success",
-                "message": "Tarjeta digital emitida exitosamente."
-            }
-        except HTTPException:
-            raise
-        except Exception as e:
-            print(f"[TarjetasService] Error al crear tarjeta: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="No fue posible completar la emisión de la tarjeta (MS-3831)."
+            raise PipelineException(
+                etapa="TABLA_PRINCIPAL",
+                mensaje=f"No fue posible consultar la tarjeta solicitada (ID: {tarjeta_id}).",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     async def create_tarjeta_contador(
@@ -158,90 +189,94 @@ class TarjetasService:
                 tipo_tarjeta=tipo_tarjeta,
                 tipo=tipo,
             )
+        except Exception as e:
+            print(f"[TarjetasService] Error llamando API JCC en create_tarjeta_contador: {e}")
+            raise PipelineException(
+                etapa="CONSULTA_API_JCC",
+                mensaje="Error al consultar la API de la JCC para la emisión de la tarjeta.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
-            disponibles = consulta.get("disponibles", [])
-            foto_base64 = consulta.get("pdf",None)
-            
-            if not disponibles:
-                return {
-                    "status": "no_data",
-                    "message": "No se encontraron registros disponibles en el JCC o los datos no cumplen los criterios."
-                }
-
-            estado_tarjeta = "Emitida"
-            tipo_asociado_id = int(TIPO_ASOCIADO_MAP.get(tipo, TipoAsociado.PRIMERA_VEZ))
-            estado_tarjeta_id = int(TIPO_ESTADO_TARJETA_MAP.get(estado_tarjeta, TipoEstadoTarjeta.EMITIDA))
-
-            insertados: List[int] = []
-            omitidos: List[Dict[str, Any]] = []
-            errores: List[Dict[str, Any]] = []
-
-            for item in disponibles:
-
-                no_documento = item.get("NO_DOCUMENTO")
-
-                existe_contador = await self.repository.exists_accountant(no_documento, client_id)
-                if existe_contador:
-                    omitidos.append({
-                        "no_documento": no_documento,
-                        "message": f"El contador con numero identificacion {no_documento} ya fue creada previamente.",
-                    })
-                    continue
-
-                try:
-                    schema = ContadorMapper.from_jcc(
-                        item, tipo_asociado_id, estado_tarjeta_id, foto_base64
-                    )
-                    
-                    new_id = await self.repository.create_contadores(
-                        schema.dict(), client_id
-                    )
-                    insertados.append(new_id)
-                    
-                except Exception as e:
-                    print(f"[TarjetasService] Error insertando contador: {e}")
-                    errores.append(
-                        {"item": item.get("NO_TARJETA", "Desconocido"), "error": str(e)}
-                    )
-
-
-            if not insertados and omitidos and not errores:
-                no_documents = ", ".join(str(o["no_documento"]) for o in omitidos)
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "status": "conflict",
-                        "message": f"El contador con numero documento {no_documents} ya está registrada previamente (MS-3857)."
-                    },
-                )
-
-            if not insertados and errores:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Error en la base de datos al registrar la tarjeta (MS-3831).",
-                )
-
-            status = "partial" if errores else "success"
-            if len(insertados) == 1 and not errores:
-                msg = "Tarjeta digital de contador emitida exitosamente."
-            else:
-                msg = f"Se emitieron {len(insertados)} tarjetas de contador exitosamente."
-                
-            if errores:
-                msg += f" Hubo un error en la base de datos al procesar {len(errores)} registro(s)."
-            
+        item = consulta.get("data")
+        if not item or not consulta.get("encontrado"):
             return {
-                "status": status,
-                "message": msg
+                "status": "no_data",
+                "message": "No se encontraron registros disponibles en el JCC o los datos no cumplen los criterios."
             }
 
-        except HTTPException:
+        tipo_asociado_key = tipo if tipo else "primeraVez"
+        estado_tarjeta = EstadoTarjetaEnum.EMITIDA.value
+        no_documento = item.get("no_documento")
+
+        try:
+            existe_contador = await self.repository.exists_accountant(no_documento, client_id)
+        except PipelineException:
             raise
         except Exception as e:
-            print(f"[TarjetasService] Error crítico al crear tarjeta contadores: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="Error en la base de datos al registrar la tarjeta (MS-3831).",
+            print(f"[TarjetasService] Error verificando existencia contador: {e}")
+            raise PipelineException(
+                etapa="CHECK_EXISTENCIA",
+                mensaje="Error al verificar en la base de datos si el contador ya se encuentra registrado.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                tabla_afectada="tn_tarjetavirtual_contadores",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        if existe_contador:
+            raise PipelineException(
+                etapa="CHECK_EXISTENCIA",
+                mensaje=f"El contador con número documento {no_documento} ya está registrado previamente.",
+                cliente_id=client_id,
+                tabla_afectada="tn_tarjetavirtual_contadores",
+                status_code=status.HTTP_409_CONFLICT
+            )
+
+        try:
+            contador_data = {
+                "no_tarjeta": item.get("no_tarjeta", ""),
+                "nombres": item.get("nombres", ""),
+                "primer_apellido": item.get("primer_apellido", ""),
+                "segundo_apellido": item.get("segundo_apellido", ""),
+                "no_expd": item.get("no_expd", 0),
+                "tipo_documento": item.get("tipo_documento", "CC"),
+                "no_documento": item.get("no_documento", documento),
+                "universidad": item.get("universidad", ""),
+                "estado_contador": item.get("estado_contador", "ACTIVO"),
+                "resolucion": item.get("resolucion", ""),
+                "fecha_estado": item.get("fecha_estado"),
+                "fecha_radicacion": item.get("fecha_radicacion"),
+                "fecha_resolucion": item.get("fecha_resolucion"),
+                "acta_jcc": item.get("acta_jcc"),
+                "fecha_grado": item.get("fecha_grado"),
+                "seccional": item.get("seccional", ""),
+                "correo": item.get("correo", ""),
+                "fecha_emision": datetime.now(),
+                "tipo_asociado": tipo_asociado_key,
+                "estado": estado_tarjeta,
+                "foto": item.get("pdf")
+            }
+            
+            new_id = await self.repository.create_contadores(contador_data, client_id)
+            return {
+                "status": "success",
+                "id": new_id,
+                "message": "Tarjeta digital de contador emitida exitosamente."
+            }
+        except PipelineException:
+            raise
+        except Exception as e:
+            print(f"[TarjetasService] Error insertando contador en DB: {e}")
+            raise PipelineException(
+                etapa="TABLA_PRINCIPAL",
+                mensaje="Error en la base de datos al registrar la tarjeta en la tabla tn_tarjetavirtual_contadores.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                tabla_afectada="tn_tarjetavirtual_contadores",
+                contexto="create_tarjeta_contador -> repository.create_contadores",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
     async def create_tarjeta_sociedad(
@@ -257,112 +292,122 @@ class TarjetasService:
                 tipo_tarjeta=tipo_tarjeta,
                 tipo=tipo,
             )
+        except Exception as e:
+            print(f"[TarjetasService] Error llamando API JCC en create_tarjeta_sociedad: {e}")
+            raise PipelineException(
+                etapa="CONSULTA_API_JCC",
+                mensaje="Error al consultar la API de la JCC para la emisión de la tarjeta de sociedad.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
-            disponibles = consulta.get("disponibles", [])
-            foto_base64 = consulta.get("pdf",None)
-            
-            if not disponibles:
-                return {
-                    "status": "no_data",
-                    "message": "No se encontraron registros disponibles en el JCC o los datos no cumplen los criterios."
-                }
-            
-            estado_tarjeta = "Emitida"
-            tipo_asociado_id = int(TIPO_ASOCIADO_MAP.get(tipo, TipoAsociado.PRIMERA_VEZ))
-            estado_tarjeta_id = int(TIPO_ESTADO_TARJETA_MAP.get(estado_tarjeta, TipoEstadoTarjeta.EMITIDA))
-
-            insertados: List[int] = []
-            omitidos: List[Dict[str, Any]] = []
-            errores: List[Dict[str, Any]] = []
-
-            for item in disponibles:
-                nit = item.get("NIT")
-
-                existe_sociedad = await self.repository.exists_society(nit, client_id)
-                if existe_sociedad:
-                    omitidos.append({
-                        "nit": nit,
-                        "message": f"La sociedad con NIT {nit} ya fue creada previamente.",
-                    })
-                    continue
-
-                try:
-                    schema = SociedadMapper.from_jcc(
-                        item, tipo_asociado_id, estado_tarjeta_id, foto_base64
-                    )
-                    
-                    new_id = await self.repository.create_sociedades(
-                        schema.dict(), client_id
-                    )
-                    insertados.append(new_id)
-                    
-                except Exception as e:
-                    print(f"[TarjetasService] Error insertando sociedad: {e}")
-                    errores.append(
-                        {"item": item.get("NO_EXPD", "Desconocido"), "error": str(e)}
-                    )
-
-            if not insertados and omitidos and not errores:
-                nits = ", ".join(str(o["nit"]) for o in omitidos)
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "status": "conflict",
-                        "message": f"La sociedad con NIT {nits} ya está(n) registrada(s) previamente (MS-3857)."
-                    },
-                )
-
-            if not insertados and errores:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Error en la base de datos al registrar la tarjeta (MS-3831).",
-                )
-
-            status = "partial" if errores else "success"
-            if len(insertados) == 1 and not errores:
-                msg = "Tarjeta digital de sociedad emitida exitosamente."
-            else:
-                msg = f"Se emitieron {len(insertados)} tarjetas de sociedad exitosamente."
-                
-            if errores:
-                msg += f" Hubo un error en la base de datos al procesar {len(errores)} registro(s)."
-            
+        item = consulta.get("data")
+        if not item or not consulta.get("encontrado"):
             return {
-                "status": status,
-                "message": msg
+                "status": "no_data",
+                "message": "No se encontraron registros disponibles en el JCC o los datos no cumplen los criterios."
             }
+        
+        tipo_asociado_key = tipo if tipo else "primeraVez"
+        estado_tarjeta = EstadoTarjetaEnum.EMITIDA.value
+        nit = item.get("nit") or documento
 
-        except HTTPException:
+        try:
+            existe_sociedad = await self.repository.exists_society(nit, client_id)
+        except PipelineException:
             raise
         except Exception as e:
-            print(f"[TarjetasService] Error crítico al crear tarjeta sociedad: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="Error en la base de datos al registrar la tarjeta (MS-3831).",
+            print(f"[TarjetasService] Error verificando existencia sociedad: {e}")
+            raise PipelineException(
+                etapa="CHECK_EXISTENCIA",
+                mensaje="Error al verificar en la base de datos si la sociedad ya se encuentra registrada.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                tabla_afectada="tn_tarjetavirtual_sociedades",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        if existe_sociedad:
+            raise PipelineException(
+                etapa="CHECK_EXISTENCIA",
+                mensaje=f"La sociedad con NIT {nit} ya está registrada previamente.",
+                cliente_id=client_id,
+                tabla_afectada="tn_tarjetavirtual_sociedades",
+                status_code=status.HTTP_409_CONFLICT
+            )
+
+        try:
+            sociedad_data = {
+                "no_expd": item.get("no_expd", 0),
+                "razon_social": item.get("razon_social", ""),
+                "nit": nit,
+                "tipo_sociedad": item.get("tipo_sociedad", "SOCIEDAD DE CONTADORES"),
+                "inscripcion": item.get("inscripcion"),
+                "fecha_radicacion": item.get("fecha_radicacion"),
+                "estado_sociedad": item.get("estado_sociedad", "ACTIVO"),
+                "resolucion": item.get("resolucion", ""),
+                "fecha_resolucion": item.get("fecha_resolucion"),
+                "acta_jcc": str(item.get("acta_jcc")) if item.get("acta_jcc") is not None else None,
+                "estado_solicitud": item.get("estado_solicitud"),
+                "tipo_solicitud": item.get("tipo_solicitud"),
+                "correo": item.get("correo", ""),
+                "representante_legal": item.get("representante_legal", ""),
+                "fecha_emision": datetime.now(),
+                "tipo_asociado": tipo_asociado_key,
+                "estado": estado_tarjeta,
+                "foto": item.get("pdf")
+            }
+            
+            new_id = await self.repository.create_sociedades(sociedad_data, client_id)
+            return {
+                "status": "success",
+                "id": new_id,
+                "message": "Tarjeta digital de sociedad emitida exitosamente."
+            }
+        except PipelineException:
+            raise
+        except Exception as e:
+            print(f"[TarjetasService] Error insertando sociedad en DB: {e}")
+            raise PipelineException(
+                etapa="TABLA_PRINCIPAL",
+                mensaje="Error en la base de datos al registrar la tarjeta en la tabla tn_tarjetavirtual_sociedades.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                tabla_afectada="tn_tarjetavirtual_sociedades",
+                contexto="create_tarjeta_sociedad -> repository.create_sociedades",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     async def get_historial(self, tarjeta_id: int, client_id: Optional[int] = None, tipo: Optional[str] = None) -> List[Dict[str, Any]]:
         try:
             return await self.repository.get_historial(tarjeta_id, client_id, tipo)
-        except HTTPException:
+        except PipelineException:
             raise
         except Exception as e:
             print(f"[TarjetasService] Error al obtener historial de tarjeta {tarjeta_id}: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="No fue posible obtener el historial de la tarjeta (MS-3832)."
+            raise PipelineException(
+                etapa="TABLA_INTERMEDIA",
+                mensaje=f"No fue posible consultar el historial para la tarjeta ID {tarjeta_id}.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                tabla_afectada="tn_tarjetavirtual_historial",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     async def get_validador_config(self, client_id: Optional[int] = None) -> Dict[str, Any]:
         try:
             return await self.repository.get_validador_config(client_id)
-        except HTTPException:
+        except PipelineException:
             raise
         except Exception as e:
             print(f"[TarjetasService] Error al cargar configuración de validador: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="No fue posible cargar la configuración del validador (MS-3850)."
+            raise PipelineException(
+                etapa="CONFIGURACION_VALIDADOR",
+                mensaje="No fue posible cargar la configuración del validador QR.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     async def save_validador_config(self, data: ValidadorConfigSchema, client_id: Optional[int] = None) -> Dict[str, Any]:
@@ -372,13 +417,35 @@ class TarjetasService:
                 "status": "success",
                 "message": "Configuración del validador guardada exitosamente."
             }
-        except HTTPException:
+        except PipelineException:
             raise
         except Exception as e:
             print(f"[TarjetasService] Error al guardar configuración de validador: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="No fue posible guardar la configuración del validador (MS-3851)."
+            raise PipelineException(
+                etapa="CONFIGURACION_VALIDADOR",
+                mensaje="No fue posible guardar la configuración del validador QR.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    async def get_columns_config(self, tipo_tarjeta: str = "contadores", client_id: Optional[int] = None) -> Dict[str, Any]:
+        try:
+            cols = await self.repository.get_columns_config(tipo_tarjeta, client_id)
+            return {
+                "status": "success",
+                "data": cols
+            }
+        except PipelineException:
+            raise
+        except Exception as e:
+            print(f"[TarjetasService] Error al cargar configuración de columnas: {e}")
+            raise PipelineException(
+                etapa="CONFIGURACION_COLUMNAS",
+                mensaje="No fue posible cargar la configuración de columnas.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     async def create_or_update_branding_credentials(self, data: BrandingCredentialsCreateSchema, client_id: Optional[int] = None,) -> Dict[str, Any]:
@@ -388,7 +455,6 @@ class TarjetasService:
                 cid, data.tipo_id, client_id=cid
             )
 
-            # Preservar logo y patrón de la versión previa si no se enviaron nuevos
             logo_val = data.logo or (existing.get("logo") if existing else None)
             patron_val = data.patron or (existing.get("patron") if existing else None)
 
@@ -409,23 +475,27 @@ class TarjetasService:
                 "status": "success",
                 "message": "Branding credencial creada exitosamente.",
             }
-
-        except HTTPException:
+        except PipelineException:
             raise
         except Exception as e:
             print(f"[TarjetasService] Error en upsert branding: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="No fue posible guardar la configuración de branding (MS-3852).",
+            raise PipelineException(
+                etapa="BRANDING_CREDENTIALS",
+                mensaje="No fue posible guardar la configuración de branding credenciales.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    async def update_branding_credentials_change_version(self, branding_credential_id: int, data: BrandingCredentialsUpdateSchema,  client_id: Optional[int] = None) -> Dict[str, Any]:
+    async def update_branding_credentials_change_version(self, branding_credential_id: int, data: BrandingCredentialsUpdateSchema, client_id: Optional[int] = None) -> Dict[str, Any]:
         try:
             existing = await self.repository.get_by_id_branding_credencials(branding_credential_id, client_id)
             if not existing:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Branding credencial con ID {branding_credential_id} no encontrado (MS-3857)."
+                raise PipelineException(
+                    etapa="BRANDING_CREDENTIALS",
+                    mensaje=f"Branding credencial con ID {branding_credential_id} no encontrado.",
+                    cliente_id=client_id,
+                    status_code=status.HTTP_404_NOT_FOUND
                 )
             
             await self.repository.update_branding_credentials_change_version(
@@ -439,52 +509,62 @@ class TarjetasService:
                 "status": "success",
                 "message": "Versión publicada actualizada exitosamente."
             }
-            
-        except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
-        except HTTPException:
+        except PipelineException:
             raise
         except Exception as e:
             print(f"[TarjetasService] Error al actualizar versión publicada {branding_credential_id}: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="No fue posible actualizar la versión publicada del branding (MS-3856)."
+            raise PipelineException(
+                etapa="BRANDING_CREDENTIALS",
+                mensaje="No fue posible actualizar la versión publicada del branding.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     async def get_branding_credentials(self, branding_credential_id: int, client_id: Optional[int] = None) -> Dict[str, Any]:
         try:
             result = await self.repository.get_by_id_branding_credencials(branding_credential_id, client_id)
             if not result:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Branding credencial con ID {branding_credential_id} no encontrado."
+                raise PipelineException(
+                    etapa="BRANDING_CREDENTIALS",
+                    mensaje=f"Branding credencial con ID {branding_credential_id} no encontrado.",
+                    cliente_id=client_id,
+                    status_code=status.HTTP_404_NOT_FOUND
                 )
             return result
-        except HTTPException:
+        except PipelineException:
             raise
         except Exception as e:
             print(f"[TarjetasService] Error al obtener Branding credencial {branding_credential_id}: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="No fue posible obtener la información del branding (MS-3855)."
+            raise PipelineException(
+                etapa="BRANDING_CREDENTIALS",
+                mensaje="No fue posible obtener la información del branding.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     async def get_branding_credentials_publish(self, branding_credential_id: int, client_id: Optional[int] = None) -> Dict[str, Any]:
         try:
             result = await self.repository.get_branding_credentials_publish(branding_credential_id, client_id)
             if not result:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Branding credencial con ID {branding_credential_id} no encontrado."
+                raise PipelineException(
+                    etapa="BRANDING_CREDENTIALS",
+                    mensaje=f"Branding credencial con ID {branding_credential_id} no encontrado.",
+                    cliente_id=client_id,
+                    status_code=status.HTTP_404_NOT_FOUND
                 )
             return result
-        except HTTPException:
+        except PipelineException:
             raise
         except Exception as e:
             print(f"[TarjetasService] Error al obtener Branding credencial publicada {branding_credential_id}: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="No fue posible obtener la información del branding (MS-3856)."
+            raise PipelineException(
+                etapa="BRANDING_CREDENTIALS",
+                mensaje="No fue posible obtener la información del branding publicado.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     async def list_history_branding_credentials(
@@ -501,13 +581,16 @@ class TarjetasService:
             return await self.repository.list_history_branding_credentials(
                 branding_credential_id, client_id, page, page_size
             )
-        except HTTPException:
+        except PipelineException:
             raise
         except Exception as e:
-            print(f"[TarjetasService] Error al obtener el historial de versiones de Branding de credenciales {branding_credential_id}: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="No fue posible obtener el historial de versiones de Branding de credenciales (MS-3854)."
+            print(f"[TarjetasService] Error al obtener el historial de versiones de Branding {branding_credential_id}: {e}")
+            raise PipelineException(
+                etapa="BRANDING_CREDENTIALS",
+                mensaje="No fue posible obtener el historial de versiones del branding.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     async def create_auditoria_api(self, data: AuditoriaApiCreateSchema, client_id: Optional[int] = None) -> Dict[str, Any]:
@@ -518,13 +601,17 @@ class TarjetasService:
                 "status": "success",
                 "message": "Creacion de la auditoría API creada exitosamente."
             }
-        except HTTPException:
+        except PipelineException:
             raise
         except Exception as e:
             print(f"[TarjetasService] Error al crear la auditoría API: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="No fue posible completar la creacion de la auditoría API (MS-3852)."
+            raise PipelineException(
+                etapa="REGISTRO_AUDITORIA",
+                mensaje="No fue posible guardar el registro en la tabla de auditoría (jcc_auditoria_api).",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                tabla_afectada="jcc_auditoria_api",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     async def list_auditoria_api(
@@ -540,9 +627,7 @@ class TarjetasService:
         cambiar_estado: Optional[str] = None,
     ) -> Dict[str, Any]:
         try:
-            # Aseguramos que page_size nunca supere 100
             page_size = min(max(page_size, 1), 100)
-            
             return await self.repository.get_all_auditoria_api(
                 client_id=client_id,
                 page=page,
@@ -554,11 +639,15 @@ class TarjetasService:
                 texto=texto,
                 cambiar_estado=cambiar_estado,
             )
-        except HTTPException:
+        except PipelineException:
             raise
         except Exception as e:
             print(f"[TarjetasService] Error al listar la auditoría API: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="No fue posible cargar el listado de auditoría API (MS-3852)."
+            raise PipelineException(
+                etapa="REGISTRO_AUDITORIA",
+                mensaje="No fue posible cargar la lista de auditoría desde la tabla jcc_auditoria_api.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                tabla_afectada="jcc_auditoria_api",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
