@@ -1,6 +1,5 @@
 from datetime import datetime
 from typing import Any, Dict, Optional
-from app.constants import TIPO_TARJETA_MAP, TIPO_ASOCIADO_MAP
 
 def build_auditoria_payload(
     *,
@@ -16,10 +15,8 @@ def build_auditoria_payload(
     """Construye el dict listo para el repositorio."""
     return {
         "client_id": client_id,
-        "tipo_id": int(TIPO_TARJETA_MAP[tipo_tarjeta]),          # FK a tipos
-        "tipo_asociado_id": (
-            int(TIPO_ASOCIADO_MAP[tipo]) if tipo in TIPO_ASOCIADO_MAP else None
-        ),
+        "tipo_tarjeta": tipo_tarjeta,
+        "tipo_asociado": tipo,
         "metodo": metodo,
         "url": url,
         "fecha_creacion": datetime.now(),

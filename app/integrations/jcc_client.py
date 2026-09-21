@@ -1,54 +1,13 @@
 import os
-import json
 import httpx
-import random
-import time
 from typing import Dict, Any
 
-PROD_BASE_URL = "https://apitarjetas.jcc.gov.co".rstrip("/")
+PROD_BASE_URL = os.getenv("JCC_API_BASE_URL", "https://apitarjetas.jcc.gov.co").rstrip("/")
 
 JCC_API_BEARER_TOKEN = os.getenv(
     "JCC_API_BEARER_TOKEN",
     "kvllYI0urrjVdqYOUTJZw7p5qIG9U5c8XlnNs60MMfC5yYArY3JuntakvllYI0urrjVdqYOUTJZw7p5qIG9U5c8XlnNs60MMfC5yYArY3"
 )
-
-# Activa el fallback automático a datos simulados cuando no hay conexión por VPN (True por defecto)
-ENABLE_JCC_MOCK_FALLBACK = os.getenv("ENABLE_JCC_MOCK_FALLBACK", "true").lower() in ("true", "1", "yes")
-
-# Fuerza retornar datos simulados inmediatamente sin intentar llamar a la red
-FORCE_JCC_MOCK = os.getenv("FORCE_JCC_MOCK", "false").lower() in ("true", "1", "yes")
-
-# Base64 dummy sobrio (Avatar en slate oscuro/plateado) para simular la fotografía/avatar cuando no hay VPN
-MOCK_IMAGE_BASE64 = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiB2aWV3Qm94PSIwIDAgMjAwIDIwMCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj48c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjMzM0MTU1Ii8+PHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjMWUyOTNiIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIyMDAiIHJ4PSIyMCIgZmlsbD0idXJsKCNnKSIvPjxjaXJjbGUgY3g9IjEwMCIgY3k9Ijc1IiByPSIzNSIgZmlsbD0iI2NiZDVlMSIvPjxwYXRoIGQ9Ik0xMDAgMTIwIGMtMzUgMCAtNjUgMTggLTY1IDQwIHYgMTUgaCAxMzAgdiAtMTUgYzAgLTIyIC0zMCAtNDAgLTY1IC00MCB6IiBmaWxsPSIjY2JkNWUxIi8+PC9zdmc+"
-
-# Listados de 20 nombres y 20 apellidos para combinación dinámica en simulaciones
-NOMBRES_MOCK = [
-    "CARLOS ANDRES", "MARIA FERNANDA", "JUAN DAVID", "LAURA VICTORIA",
-    "ALEJANDRO", "DIANA CAROLINA", "SANTIAGO", "ANA MARIA",
-    "GABRIEL EDUARDO", "DANIELA", "FELIPE", "ANDREA DEL PILAR",
-    "CAMILO ERNESTO", "VALENTINA", "MATEO", "SOFIA",
-    "NICOLAS", "NATALIA", "DIEGO FERNANDO", "PAOLA ANDREA"
-]
-
-APELLIDOS_MOCK = [
-    "RODRIGUEZ", "GOMEZ", "MORALES", "LOPEZ",
-    "MARTINEZ", "VARGAS", "HERNANDEZ", "TORRES",
-    "RAMIREZ", "CASTRO", "MENDOZA", "SILVA",
-    "RINCON", "QUINTERO", "SALAZAR", "OSPINA",
-    "CARDONA", "BELTRAN", "GUTIERREZ", "ROJAS"
-]
-
-SOCIEDADES_NOMBRES = [
-    "ASESORES CONTABLES Y TRIBUTARIOS", "AUDITORES ASOCIADOS", "CONSULTORES FINANCIEROS",
-    "SOLUCIONES CONTABLES", "INVERSIONES Y AUDITORIAS", "SERVICIOS CONTABLES INTEGRALES",
-    "ESTRATEGIA TRIBUTARIA", "GRUPO FINANCIERO", "CONTADORES PUBLICOS UNIDOS",
-    "GESTION FISCAL GLOBAL", "AUDITORES FINANCIEROS Y FISCALES", "VISION CONTABLE",
-    "CONSULTORES TRIBUTARIOS INTEGRADOS", "ALIANZA CONTABLE E IMPUESTOS", "ASESORIAS FISCALES CORPORATIVAS",
-    "RED DE AUDITORES COLOMBIA", "INTEGRITA CONTABLE", "NEXO FINANCIERO Y CONTABLE",
-    "ASESORES GLOBALES DE COLOMBIA", "CONSULTORIA Y AUDITORIA ESTRATEGICA"
-]
-
-SOCIEDADES_TIPOS = ["S.A.S.", "& CIA LTDA", "S.A.", "E HIJOS S.A.S.", "GROUP S.A.S."]
 
 
 class JccClient:
@@ -75,100 +34,15 @@ class JccClient:
         else:
             return "".join(c for c in str(documento).strip() if c.isalnum())
 
-    def _generar_respuesta_mock(self, documento: str, tipo_tarjeta: str) -> Dict[str, Any]:
-        """
-        Genera una respuesta simulada combinando aleatoriamente listados de 20 nombres y 20 apellidos
-        cuando no hay conectividad VPN en preproducción/local.
-        """
-        print(f"[JCC API Client] 🎭 Generando respuesta SIMULADA combinada para documento: {documento} ({tipo_tarjeta})")
-
-        # Usar semilla basada en documento si viene uno, o combinaciones aleatorias
-        seed_val = f"{documento}_{time.time()}" if documento else str(time.time())
-        rnd = random.Random(seed_val)
-
-        if tipo_tarjeta == "sociedades":
-            nit_limpio = documento
-            base_nombre = rnd.choice(SOCIEDADES_NOMBRES)
-            tipo_soc = rnd.choice(SOCIEDADES_TIPOS)
-            razon_social = f"{base_nombre} {tipo_soc}"
-
-            item_mock = {
-                "NIT": nit_limpio,
-                "RAZON_SOCIAL": razon_social,
-                "TIPO_SOCIEDAD": "SOCIEDAD DE CONTADORES",
-                "NO_EXPD": rnd.randint(10000, 99999),
-                "INSCRIPCION": rnd.randint(1000, 9999),
-                "ESTADO_SOCIEDAD": "ACTIVO",
-                "RESOLUCION": f"RES-SOC-{rnd.randint(100, 999)}-2024",
-                "FECH_RESOLU": "2024-02-01T00:00:00",
-                "FECHA_RADICACION": "2024-01-20T00:00:00",
-                "ACTA_JCC": f"ACTA-SOC-{rnd.randint(100, 999)}",
-                "ESTADO_SOLICITUD": "APROBADO",
-                "TIPO_SOLICITUD": "PRIMERA VEZ"
-            }
-        else:
-            doc_suffix = documento[-6:] if len(documento) >= 6 else documento
-            nombre_sel = rnd.choice(NOMBRES_MOCK)
-            apellido1_sel = rnd.choice(APELLIDOS_MOCK)
-            apellido2_sel = rnd.choice(APELLIDOS_MOCK)
-
-            email_user = f"{nombre_sel.lower().split()[0]}.{apellido1_sel.lower()}{rnd.randint(10,99)}"
-
-            item_mock = {
-                "NO_DOCUMENTO": documento,
-                "TIPO_DOCUMENTO": "CC",
-                "NOMBRES": nombre_sel,
-                "PRIMER_APELLIDO": apellido1_sel,
-                "SEGUNDO_APELLIDO": apellido2_sel,
-                "NO_TARJETA": f"TP-{doc_suffix}",
-                "NO_EXPD": rnd.randint(100000, 999999),
-                "UNIVERSIDAD": "UNIVERSIDAD SIMULADA JCC",
-                "ESTADO_CONTADOR": "ACTIVO",
-                "RESOLUCION": f"RES-{rnd.randint(1000, 9999)}-2024",
-                "FECHA_ESTADO": "2024-01-15T00:00:00",
-                "FECHA_RADICACION": "2024-01-10T00:00:00",
-                "FECH_RESOLU": "2024-01-12T00:00:00",
-                "ACTA_JCC": rnd.randint(100, 999),
-                "FECHA_GRADO": "2023-12-01T00:00:00",
-                "SECCIONAL": "BOGOTA",
-                "EMAIL": f"{email_user}@example.com"
-            }
-
-        return {
-            "disponibles": [item_mock],
-            "pdf": MOCK_IMAGE_BASE64,
-            "encontrado": True,
-            "simulado": True
-        }
-
     async def consultar_registro(self, documento: str, tipo_tarjeta: str = "contadores", tipo: str = "") -> Dict[str, Any]:
-        
-        documento_limpio = self._limpiar_documento(documento, tipo_tarjeta)
-        if not documento_limpio:
-            return {"disponibles": [], "pdf": None, "encontrado": False, "error": "Documento vacío"}
+        documento_limpio = self._limpiar_documento(documento, tipo_tarjeta) if documento else ""
 
         prod_endpoint = "/sociedades/" if tipo_tarjeta == "sociedades" else "/contadores/"
         url = f"{PROD_BASE_URL}{prod_endpoint}"
         self.last_url = url
         self.last_metodo = "POST"
 
-        # Si se fuerza mock inmediatamente, no llamar a la red
-        if FORCE_JCC_MOCK:
-            return self._generar_respuesta_mock(documento_limpio, tipo_tarjeta)
-
-        tipo_map = {
-            "Primera vez": "primeraVez",
-            "Duplicado": "duplicado",
-            "Sustitución": "sustitucion",
-            "Sustitucion": "sustitucion",
-            "Modificación": "modificacion",
-            "Modificacion": "modificacion",
-            "primeraVez": "primeraVez",
-            "duplicado": "duplicado",
-            "sustitucion": "sustitucion",
-            "modificacion": "modificacion"
-        }
-        tipo_final = tipo_map.get(tipo, tipo if tipo else "primeraVez")
+        tipo_final = tipo if tipo else ("modificacion" if tipo_tarjeta == "sociedades" else "primeraVez")
 
         payload = {
             "tipo": tipo_final,
@@ -183,8 +57,7 @@ class JccClient:
         }
 
         try:
-            print(f"[JCC API Client] Consultando API Producción JCC: {url}")
-            async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+            async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
                 response = await client.post(url, json=payload, headers=headers)
 
             if response.status_code == 200:
@@ -192,28 +65,69 @@ class JccClient:
                 data = self._normalizar_respuesta(raw_data)
 
                 if "error" in data and data["error"]:
-                    print(f"[JCC API Client] API reportó error lógico: {data['error']}")
-                else:
-                    disponibles = data.get("disponibles", [])
-                    if disponibles:
-                        data["encontrado"] = True
-                        return data
-                    else:
-                        print(f"[JCC API Client] No se encontraron registros disponibles en {url}")
+                    return {"encontrado": False, "data": None, "disponibles": [], "error": data["error"]}
+                
+                disponibles = data.get("disponibles", [])
+                pdf = data.get("pdf")
+                
+                if not disponibles and not pdf:
+                    return {"encontrado": False, "data": None, "disponibles": []}
+
+                disponibles_limpios = []
+                for raw_item in (disponibles if disponibles else [{}]):
+                    foto_b64 = pdf or raw_item.get("FOTO") or raw_item.get("foto") or ""
+                    if not foto_b64 or "no existe" in str(foto_b64).lower() or "error" in str(foto_b64).lower():
+                        foto_b64 = None
+                    elif not foto_b64.startswith("data:"):
+                        foto_b64 = f"data:image/jpeg;base64,{foto_b64}"
+
+                    clean_record = {
+                        "no_tarjeta": raw_item.get("NO_TARJETA") or raw_item.get("no_tarjeta", ""),
+                        "nombres": raw_item.get("NOMBRES") or raw_item.get("nombres", ""),
+                        "primer_apellido": raw_item.get("PRIMER_APELLIDO") or raw_item.get("primer_apellido", ""),
+                        "segundo_apellido": raw_item.get("SEGUNDO_APELLIDO") or raw_item.get("segundo_apellido", ""),
+                        "no_expd": raw_item.get("NO_EXPD") or raw_item.get("EXPEDIENTE") or raw_item.get("no_expd", 0),
+                        "tipo_documento": raw_item.get("TIPO_DOCUMENTO") or raw_item.get("tipo_documento", "CC"),
+                        "no_documento": str(raw_item.get("NO_DOCUMENTO") or raw_item.get("no_documento") or documento_limpio),
+                        "universidad": raw_item.get("UNIVERSIDAD") or raw_item.get("universidad", ""),
+                        "estado_contador": raw_item.get("ESTADO_CONTADOR") or raw_item.get("estado_contador", "ACTIVO"),
+                        "resolucion": raw_item.get("RESOLUCION") or raw_item.get("resolucion", ""),
+                        "fecha_estado": raw_item.get("FECHA_ESTADO") or raw_item.get("fecha_estado"),
+                        "fecha_radicacion": raw_item.get("FECHA_RADICACION") or raw_item.get("fecha_radicacion"),
+                        "fecha_resolucion": raw_item.get("FECH_RESOLU") or raw_item.get("FECHA_RESOLUCION") or raw_item.get("fecha_resolucion"),
+                        "acta_jcc": raw_item.get("ACTA_JCC") or raw_item.get("acta_jcc"),
+                        "fecha_grado": raw_item.get("FECHA_GRADO") or raw_item.get("fecha_grado"),
+                        "seccional": raw_item.get("SECCIONAL") or raw_item.get("seccional", ""),
+                        "correo": raw_item.get("EMAIL") or raw_item.get("correo", ""),
+                        "razon_social": raw_item.get("RAZON_SOCIAL") or raw_item.get("razon_social", ""),
+                        "nit": str(raw_item.get("NIT") or raw_item.get("nit") or documento_limpio),
+                        "tipo_sociedad": raw_item.get("TIPO_SOCIEDAD") or raw_item.get("tipo_sociedad", "SOCIEDAD DE CONTADORES"),
+                        "inscripcion": raw_item.get("INSCRIPCION") or raw_item.get("inscripcion"),
+                        "estado_sociedad": raw_item.get("ESTADO_SOCIEDAD") or raw_item.get("estado_sociedad", "ACTIVO"),
+                        "estado_solicitud": raw_item.get("ESTADO_SOLICITUD") or raw_item.get("estado_solicitud"),
+                        "tipo_solicitud": raw_item.get("TIPO_SOLICITUD") or raw_item.get("tipo_solicitud"),
+                        "representante_legal": raw_item.get("REPRESENTANTE_LEGAL") or raw_item.get("representante_legal", ""),
+                        "foto": foto_b64,
+                        "pdf": foto_b64
+                    }
+                    disponibles_limpios.append(clean_record)
+
+                return {
+                    "encontrado": True,
+                    "data": disponibles_limpios[0] if disponibles_limpios else None,
+                    "disponibles": disponibles_limpios
+                }
             else:
-                print(f"[JCC API Client] Error HTTP {response.status_code} en {url}: {response.text}")
+                return {
+                    "encontrado": False,
+                    "data": None,
+                    "error": f"Error de comunicación HTTP {response.status_code}"
+                }
 
         except Exception as e:
-            print(f"[JCC API Client] ⚠️ Excepción de red / VPN conectando a {url}: {e}")
-
-        # Si falla la red/VPN o la API no trae datos, y el fallback mock está habilitado:
-        if ENABLE_JCC_MOCK_FALLBACK:
-            print(f"[JCC API Client] ⚠️ Activando respuesta simulada por falta de conexión VPN a {url}")
-            return self._generar_respuesta_mock(documento_limpio, tipo_tarjeta)
-
-        return {
-            "disponibles": [],
-            "pdf": None,
-            "encontrado": False,
-            "error": "No se encontraron registros en Producción JCC."
-        }
+            return {
+                "encontrado": False,
+                "data": None,
+                "error": f"Error de conexión con la API de la JCC: {str(e)}"
+            }
+
