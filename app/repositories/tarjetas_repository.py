@@ -13,13 +13,14 @@ class TarjetasRepository:
         client_id: Optional[int] = None, 
         page: int = 1, 
         page_size: int = 10,
-        filtro_nombre: Optional[str] = None,       # Nombre completo (contadores) / Razón social (sociedades)
+        texto: Optional[str] = None,               # Búsqueda general (nombre / razón social, tarjeta/inscripción, expediente, documento/nit, correo)
         filtro_documento: Optional[str] = None,    # Documento (contadores) / NIT (sociedades)
         filtro_expediente: Optional[str] = None,   # No. Expediente
         filtro_resolucion: Optional[str] = None,   # Resolución
         filtro_acta_jcc: Optional[str] = None,     # Acta JCC
         filtro_no_tarjeta: Optional[str] = None,   # Número de tarjeta (solo contadores)
         filtro_inscripcion: Optional[str] = None,  # Inscripción (solo sociedades)
+        filtro_correo: Optional[str] = None,       # Correo electrónico
         order_by: Optional[str] = None,
         order_dir: str = "DESC"
     ) -> Dict[str, Any]:
@@ -51,6 +52,7 @@ class TarjetasRepository:
                         "no_expd": "ttc.no_expd",
                         "resolucion": "ttc.resolucion",
                         "acta_jcc": "ttc.acta_jcc",
+                        "correo": "ttc.correo",
                         "fecha_emision": "ttc.fecha_emision"
                     }
                     
@@ -58,14 +60,23 @@ class TarjetasRepository:
                     conditions = ["1=1"]
                     params = []
                     
-                    if filtro_nombre:
-                        conditions.append("CONCAT(ttc.nombres, ' ', ttc.primer_apellido, ' ', ttc.segundo_apellido) LIKE %s")
-                        params.append(f"%{filtro_nombre}%")
+                    if texto:
+                        term = f"%{texto}%"
+                        conditions.append("""(
+                            CONCAT(IFNULL(ttc.nombres, ''), ' ', IFNULL(ttc.primer_apellido, ''), ' ', IFNULL(ttc.segundo_apellido, '')) LIKE %s
+                            OR ttc.no_tarjeta LIKE %s
+                            OR CAST(ttc.no_expd AS CHAR) LIKE %s
+                            OR ttc.no_documento LIKE %s
+                            OR CONCAT(IFNULL(ttc.tipo_documento, ''), ' ', IFNULL(ttc.no_documento, '')) LIKE %s
+                            OR ttc.correo LIKE %s
+                        )""")
+                        params.extend([term, term, term, term, term, term])
                     if filtro_documento:
-                        conditions.append("CONCAT(ttc.tipo_documento, ' ', ttc.no_documento) LIKE %s")
-                        params.append(f"%{filtro_documento}%")
+                        term_doc = f"%{filtro_documento}%"
+                        conditions.append("(ttc.no_documento LIKE %s OR CONCAT(IFNULL(ttc.tipo_documento, ''), ' ', IFNULL(ttc.no_documento, '')) LIKE %s)")
+                        params.extend([term_doc, term_doc])
                     if filtro_expediente:
-                        conditions.append("ttc.no_expd LIKE %s")
+                        conditions.append("CAST(ttc.no_expd AS CHAR) LIKE %s")
                         params.append(f"%{filtro_expediente}%")
                     if filtro_resolucion:
                         conditions.append("ttc.resolucion LIKE %s")
@@ -76,6 +87,9 @@ class TarjetasRepository:
                     if filtro_no_tarjeta:
                         conditions.append("ttc.no_tarjeta LIKE %s")
                         params.append(f"%{filtro_no_tarjeta}%")
+                    if filtro_correo:
+                        conditions.append("ttc.correo LIKE %s")
+                        params.append(f"%{filtro_correo}%")
 
                     where_clause = " WHERE " + " AND ".join(conditions)
                     
@@ -99,14 +113,21 @@ class TarjetasRepository:
                     conditions = ["1=1"]
                     params = []
                     
-                    if filtro_nombre:
-                        conditions.append("tts.razon_social LIKE %s")
-                        params.append(f"%{filtro_nombre}%")
+                    if texto:
+                        term = f"%{texto}%"
+                        conditions.append("""(
+                            tts.razon_social LIKE %s
+                            OR tts.nit LIKE %s
+                            OR CAST(tts.no_expd AS CHAR) LIKE %s
+                            OR tts.inscripcion LIKE %s
+                            OR tts.resolucion LIKE %s
+                        )""")
+                        params.extend([term, term, term, term, term])
                     if filtro_documento:
                         conditions.append("tts.nit LIKE %s")
                         params.append(f"%{filtro_documento}%")
                     if filtro_expediente:
-                        conditions.append("tts.no_expd LIKE %s")
+                        conditions.append("CAST(tts.no_expd AS CHAR) LIKE %s")
                         params.append(f"%{filtro_expediente}%")
                     if filtro_resolucion:
                         conditions.append("tts.resolucion LIKE %s")
@@ -141,44 +162,54 @@ class TarjetasRepository:
                     select_fields = """
                         SELECT ttc.id,
                             ttc.no_tarjeta,
-                            CONCAT(ttc.nombres, " ",ttc.primer_apellido, " ", ttc.segundo_apellido) AS nombre_completo,
+                            CONCAT(IFNULL(ttc.nombres,''), ' ', IFNULL(ttc.primer_apellido,''), ' ', IFNULL(ttc.segundo_apellido,'')) AS nombre_completo,
+                            CONCAT(IFNULL(ttc.nombres,''), ' ', IFNULL(ttc.primer_apellido,''), ' ', IFNULL(ttc.segundo_apellido,'')) AS solicitante,
+                            ttc.nombres,
+                            ttc.primer_apellido,
+                            ttc.segundo_apellido,
                             ttc.no_expd,
+                            ttc.no_expd AS expediente,
                             ttc.tipo_asociado,
                             DATE_FORMAT(ttc.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision,
-                            CONCAT(ttc.tipo_documento, " ", ttc.no_documento) AS documento,
+                            CONCAT(IFNULL(ttc.tipo_documento,''), ' ', IFNULL(ttc.no_documento,'')) AS documento,
+                            ttc.tipo_documento,
+                            ttc.no_documento,
                             ttc.correo,
                             ttc.universidad,
                             ttc.estado AS estado_tarjeta,
-                            ttc.estado_contador as estado_registro,
+                            ttc.estado_contador AS estado_registro,
+                            ttc.estado_contador,
                             ttc.resolucion,
                             DATE_FORMAT(ttc.fecha_estado, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_estado,
-                            DATE_FORMAT(ttc.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_registro,
                             DATE_FORMAT(ttc.fecha_resolucion, '%%Y-%%m-%%d') AS fecha_resolucion,
                             ttc.acta_jcc,
                             DATE_FORMAT(ttc.fecha_grado, '%%Y-%%m-%%d') AS fecha_grado,
                             ttc.seccional,
-                            ttc.no_tarjeta,
                             ttc.foto
                     """
                 else:
                     select_fields = """
                         SELECT tts.id,
                             tts.no_expd,
+                            tts.no_expd AS expediente,
                             tts.razon_social,
+                            tts.razon_social AS solicitante,
                             tts.nit,
+                            tts.nit AS documento,
                             tts.tipo_asociado,
                             DATE_FORMAT(tts.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision,
                             tts.tipo_sociedad,
                             tts.inscripcion,
-                            DATE_FORMAT(tts.fecha_radicacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_inscripcion,
+                            DATE_FORMAT(tts.fecha_radicacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_radicacion,
                             tts.estado AS estado_tarjeta,
+                            tts.estado_sociedad AS estado_registro,
                             tts.estado_sociedad,
                             tts.resolucion,
                             DATE_FORMAT(tts.fecha_resolucion, '%%Y-%%m-%%d') AS fecha_resolucion,
                             tts.acta_jcc,
                             tts.estado_solicitud,
                             tts.tipo_solicitud,
-                            tts.representante_legal AS representante,
+                            tts.representante_legal,
                             tts.foto
                     """
 
@@ -283,31 +314,50 @@ class TarjetasRepository:
                 estados = await cursor.fetchall()
 
                 # 2. Obtener lecturas QR
-                await cursor.execute(
-                    """
-                    SELECT
-                        id,
-                        tarjeta_id,
-                        endpoint,
-                        metodo,
-                        codigo_http,
-                        ip,
-                        DATE_FORMAT(fecha, '%%Y-%%m-%%d %%H:%%i') AS fecha
-                    FROM tn_tarjetavirtual_lecturas_historial
-                    WHERE tarjeta_id = %s
-                    ORDER BY id DESC
-                    """,
-                    (tarjeta_id,)
-                )
-                lecturas = await cursor.fetchall()
+                try:
+                    await cursor.execute(
+                        """
+                        SELECT
+                            id,
+                            tarjeta_id,
+                            endpoint,
+                            metodo,
+                            codigo_http,
+                            ip,
+                            DATE_FORMAT(fecha, '%%Y-%%m-%%d %%H:%%i') AS fecha
+                        FROM tn_tarjetavirtual_lecturas_historial
+                        WHERE tarjeta_id = %s
+                        ORDER BY id DESC
+                        """,
+                        (tarjeta_id,)
+                    )
+                    lecturas = await cursor.fetchall()
+                except Exception:
+                    lecturas = []
 
                 # 3. Intentar obtener datos básicos de la tarjeta (Contadores o Sociedades según tipo)
                 tarjeta = None
-                if tipo and tipo.lower() == 'sociedad':
+                if tipo and (tipo.lower() == 'sociedad' or tipo.lower() == 'sociedades'):
                     await cursor.execute(
                         """
-                        SELECT id, no_expd AS expediente, nit AS documento, razon_social AS solicitante, representante_legal AS representante, 'Activa' AS tarjeta, foto
-                        FROM tn_tarjetavirtual_sociedades WHERE id = %s
+                        SELECT 
+                            tts.id, 
+                            tts.no_expd, 
+                            tts.no_expd AS expediente, 
+                            tts.nit, 
+                            tts.nit AS documento, 
+                            tts.razon_social, 
+                            tts.razon_social AS solicitante, 
+                            tts.inscripcion, 
+                            tts.inscripcion AS matricula,
+                            tts.representante_legal, 
+                            tts.representante_legal AS representante, 
+                            tts.estado AS estado_tarjeta, 
+                            tts.estado AS tarjeta, 
+                            DATE_FORMAT(tts.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision, 
+                            tts.foto
+                        FROM tn_tarjetavirtual_sociedades tts 
+                        WHERE tts.id = %s
                         """,
                         (tarjeta_id,)
                     )
@@ -316,18 +366,51 @@ class TarjetasRepository:
                 if not tarjeta:
                     await cursor.execute(
                         """
-                        SELECT id, no_expd AS expediente, no_tarjeta AS matricula, CONCAT(nombres, ' ', primer_apellido, ' ', COALESCE(segundo_apellido,'')) AS solicitante, CONCAT(tipo_documento, ' ', no_documento) AS documento, correo, foto, 'Activa' AS tarjeta
-                        FROM tn_tarjetavirtual_contadores WHERE id = %s
+                        SELECT 
+                            ttc.id, 
+                            ttc.no_expd, 
+                            ttc.no_expd AS expediente, 
+                            CONCAT(IFNULL(ttc.tipo_documento,''), ' ', IFNULL(ttc.no_documento,'')) AS documento, 
+                            ttc.no_documento,
+                            ttc.tipo_documento,
+                            CONCAT(IFNULL(ttc.nombres,''), ' ', IFNULL(ttc.primer_apellido,''), ' ', IFNULL(ttc.segundo_apellido,'')) AS nombre_completo, 
+                            CONCAT(IFNULL(ttc.nombres,''), ' ', IFNULL(ttc.primer_apellido,''), ' ', IFNULL(ttc.segundo_apellido,'')) AS solicitante, 
+                            ttc.no_tarjeta, 
+                            ttc.no_tarjeta AS matricula, 
+                            ttc.estado AS estado_tarjeta, 
+                            ttc.estado AS tarjeta, 
+                            ttc.correo, 
+                            ttc.universidad, 
+                            DATE_FORMAT(ttc.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision, 
+                            ttc.foto
+                        FROM tn_tarjetavirtual_contadores ttc 
+                        WHERE ttc.id = %s
                         """,
                         (tarjeta_id,)
                     )
                     tarjeta = await cursor.fetchone()
 
-                if not tarjeta and not (tipo and tipo.lower() == 'sociedad'):
+                if not tarjeta:
                     await cursor.execute(
                         """
-                        SELECT id, no_expd AS expediente, nit AS documento, razon_social AS solicitante, 'Activa' AS tarjeta, foto
-                        FROM tn_tarjetavirtual_sociedades WHERE id = %s
+                        SELECT 
+                            tts.id, 
+                            tts.no_expd, 
+                            tts.no_expd AS expediente, 
+                            tts.nit, 
+                            tts.nit AS documento, 
+                            tts.razon_social, 
+                            tts.razon_social AS solicitante, 
+                            tts.inscripcion, 
+                            tts.inscripcion AS matricula,
+                            tts.representante_legal, 
+                            tts.representante_legal AS representante, 
+                            tts.estado AS estado_tarjeta, 
+                            tts.estado AS tarjeta, 
+                            DATE_FORMAT(tts.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision, 
+                            tts.foto
+                        FROM tn_tarjetavirtual_sociedades tts 
+                        WHERE tts.id = %s
                         """,
                         (tarjeta_id,)
                     )
@@ -832,7 +915,7 @@ class TarjetasRepository:
                     data.get("correo"),
                     data.get("fecha_emision") or datetime.now(),
                     data.get("tipo_asociado") or data.get("tipo_asociado_id") or "Contador Público",
-                    data.get("estado") or data.get("estado_tarjeta") or "Vigente",
+                    data.get("estado") or data.get("estado_tarjeta") or "Emitida",
                     data.get("foto")
                 )
                 
@@ -901,7 +984,7 @@ class TarjetasRepository:
                     data.get("tipo_solicitud"),
                     data.get("fecha_emision") or datetime.now(),
                     data.get("tipo_asociado") or data.get("tipo_asociado_id") or "Sociedad de Contadores Públicos",
-                    data.get("estado") or data.get("estado_tarjeta") or "Vigente",
+                    data.get("estado") or data.get("estado_tarjeta") or "Emitida",
                     data.get("foto"),
                     data.get("representante_legal") or data.get("representante")
                 )

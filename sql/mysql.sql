@@ -135,27 +135,6 @@ INSERT INTO `tn_tarjetavirtual_validador_config` (`client_id`, `val_foto`, `val_
 (20001, 1, 1, 1, 0, 1, 1)
 ON DUPLICATE KEY UPDATE `val_foto`=VALUES(`val_foto`);
 
--- 2026-08-15
--- Creación de la tabla de certificados emitidos
-CREATE TABLE IF NOT EXISTS `tn_tarjetavirtual_certificados` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `client_id` INT NOT NULL,
-    `expediente` INT NOT NULL,
-    `titular` VARCHAR(150) NOT NULL,
-    `documento` VARCHAR(50) NOT NULL,
-    `matricula` VARCHAR(50) NOT NULL,
-    `correo` VARCHAR(150) DEFAULT NULL,
-    `archivo_pdf` VARCHAR(255) DEFAULT 'Certificado de vigencia y antecedentes.pdf',
-    `fecha_generacion` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Insertar certificados semilla de prueba (Impersonales)
-INSERT INTO `tn_tarjetavirtual_certificados` (`id`, `client_id`, `expediente`, `titular`, `documento`, `matricula`, `correo`, `archivo_pdf`) VALUES
-(1, 20001, 10001, 'Usuario Demo Contador Uno', 'CC 1000000001', 'MP-10001', 'contador.uno@ejemplo.com', 'Certificado de vigencia y antecedentes.pdf'),
-(2, 20001, 10002, 'Usuario Demo Contador Dos', 'CC 1000000002', 'MP-10002', 'contador.dos@ejemplo.com', 'Certificado de vigencia y antecedentes.pdf'),
-(3, 20001, 20001, 'Sociedad Auditora Ejemplo S.A.S.', 'NIT 900000001-1', 'MS-20001', 'contacto@sociedadejemplo.com', 'Certificado de vigencia y antecedentes.pdf')
-ON DUPLICATE KEY UPDATE `titular`=VALUES(`titular`);
-
 -- 2026-08-25
 -- Configuración de conexión multitenant en base de datos central
 CREATE DATABASE IF NOT EXISTS `pre_gestion_bdconex` 

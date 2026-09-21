@@ -2,6 +2,19 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 from fastapi import UploadFile, File, Form
 from datetime import datetime
+from enum import Enum
+
+class EstadoTarjetaEnum(str, Enum):
+    EMITIDA = "Emitida"
+    ACTIVA = "Activa"
+    CANCELADA = "Cancelada"
+
+class EstadoRegistroEnum(str, Enum):
+    ACTIVO = "ACTIVO"
+    INACTIVO = "INACTIVO"
+    SUSPENDIDO = "SUSPENDIDO"
+    CANCELADO = "CANCELADO"
+    FALLECIDO = "FALLECIDO"
 
 class TarjetaCreateSchema(BaseModel):
     tipo_tarjeta: Optional[str] = "contadores"
