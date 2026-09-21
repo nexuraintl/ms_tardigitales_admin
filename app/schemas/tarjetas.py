@@ -60,13 +60,3 @@ class ValidadorConfigResponse(BaseModel):
     val_codigo_tarjeta: int
     val_estado: int
 
-class CertificadoResponse(BaseModel):
-    id: int
-    client_id: int
-    expediente: int
-    titular: str
-    documento: str
-    matricula: str
-    correo: str
-    archivo_pdf: str
-    fecha_generacion: str

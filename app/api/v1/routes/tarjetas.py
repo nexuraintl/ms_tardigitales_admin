@@ -19,25 +19,27 @@ async def list_tarjetas(
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
     page: int = Query(1, ge=1, description="Número de página a consultar"),
     page_size: int = Query(10, ge=1, le=100, description="Cantidad de registros por página (máx 100)"),
-    filtro_nombre: Optional[str] = Query(None, description="Nombre completo (contadores) o Razón social (sociedades)"),
+    texto: Optional[str] = Query(None, description="Búsqueda general por nombre completo, tarjeta profesional, expediente, documento o correo"),
     filtro_documento: Optional[str] = Query(None, description="Documento (contadores) o NIT (sociedades)"),
     filtro_expediente: Optional[str] = Query(None, description="Número de expediente"),
     filtro_resolucion: Optional[str] = Query(None, description="Número de resolución"),
     filtro_acta_jcc: Optional[str] = Query(None, description="Número de acta JCC"),
     filtro_no_tarjeta: Optional[str] = Query(None, description="Número de tarjeta (solo contadores)"),
     filtro_inscripcion: Optional[str] = Query(None, description="Inscripción (solo sociedades)"),
+    filtro_correo: Optional[str] = Query(None, description="Correo electrónico"),
     order_by: Optional[str] = Query(None, description="Campo por el cual ordenar (ej: nombre_completo, fecha_emision)"),
     order_dir: str = Query("DESC", pattern="^(ASC|DESC)$", description="Dirección del ordenamiento: ASC o DESC")
 ):
     
     filtros = {
-        "nombre": filtro_nombre,
+        "texto": texto,
         "documento": filtro_documento,
         "expediente": filtro_expediente,
         "resolucion": filtro_resolucion,
         "acta_jcc": filtro_acta_jcc,
         "no_tarjeta": filtro_no_tarjeta,
-        "inscripcion": filtro_inscripcion
+        "inscripcion": filtro_inscripcion,
+        "correo": filtro_correo
     }
     
     return await service.list_tarjetas(
@@ -52,7 +54,7 @@ async def list_tarjetas(
 
 @router.get("/consult-registry")
 async def consult_registry(
-    documento: str = Query(..., description="Número de documento de identidad o NIT a consultar"),
+    documento: str = Query(..., min_length=3, description="Número de documento de identidad o NIT a consultar (obligatorio)"),
     tipo_tarjeta: str = Query("contadores", description="Tipo de registro ('contadores' o 'sociedades')"),
     tipo: Optional[str] = Query("", description="Tipo de consulta ('primeraVez', 'modificacion', etc.)"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
@@ -95,6 +97,13 @@ async def update_validador_config(
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
 ):
     return await service.save_validador_config(data, client_id)
+
+@router.get("/columns-config")
+async def get_columns_config(
+    tipo_tarjeta: str = Query("contadores", description="Tipo de tarjeta ('contadores' o 'sociedades')"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+):
+    return await service.get_columns_config(tipo_tarjeta, client_id)
 
 
 # Branding de credenciales
@@ -212,3 +221,12 @@ async def create_tarjeta_sociedad(
         tipo=data.tipo,
         client_id=client_id,
     )
+
+# HU-JCC-005: Tarea programada de emision recurrente bajo demanda
+@router.post('/emision-recurrente/ejecutar')
+async def ejecutar_emision_recurrente(
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+):
+    from app.services.scheduler_service import SchedulerService
+    scheduler = SchedulerService()
+    return await scheduler.ejecutar_emision_recurrente(client_id=client_id)

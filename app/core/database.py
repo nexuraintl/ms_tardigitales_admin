@@ -1,7 +1,8 @@
 import os
 import aiomysql
-from fastapi import HTTPException
+from fastapi import status
 from app.core.mysql import get_mysql_connection
+from app.core.exceptions import PipelineException
 
 async def get_client_mysql_config(client_id: int):
     if not os.getenv("DB1_HOST"):
@@ -11,9 +12,12 @@ async def get_client_mysql_config(client_id: int):
         connection = await get_mysql_connection()
     except Exception as e:
         print(f"[Database Manager] Error de conexión al servidor central de base de datos: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="No fue posible establecer conexión con el repositorio de datos (MS-3804)."
+        raise PipelineException(
+            etapa="CONEXION_DB_CENTRAL",
+            mensaje="No fue posible conectar con el servidor central de base de datos multitenant.",
+            detalle_tecnico=str(e),
+            cliente_id=client_id,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
     try:
@@ -37,10 +41,14 @@ async def get_client_mysql_config(client_id: int):
             result = await cursor.fetchone()
             return result
     except Exception as e:
-        print(f"[Database Manager] Error al consultar configuración de entidad {client_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Error al consultar los parámetros de configuración de la entidad (MS-3805)."
+        print(f"[Database Manager] Error al consultar tn_gestion_bdconex para cliente {client_id}: {e}")
+        raise PipelineException(
+            etapa="CONSULTA_BDCONEX",
+            mensaje=f"Error al consultar la tabla tn_gestion_bdconex para la entidad cliente {client_id}.",
+            detalle_tecnico=str(e),
+            cliente_id=client_id,
+            tabla_afectada="tn_gestion_bdconex",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     finally:
         connection.close()
@@ -52,32 +60,46 @@ async def get_client_connection(client_id: int | None = None):
         client_id = int(default_id) if default_id else None
 
     if not client_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Identificador de entidad no especificado en la solicitud (MS-3803)."
+        raise PipelineException(
+            etapa="TENANT_CLIENT_ID_REQUERIDO",
+            mensaje="Identificador de la entidad (client_id) no especificado en los parámetros de la solicitud.",
+            status_code=status.HTTP_400_BAD_REQUEST
         )
 
-    # 2. Obtener configuración dinámica desde la base de datos central
+    # 2. Obtener configuración dinámica desde la base de datos central (tn_gestion_bdconex)
     config = await get_client_mysql_config(client_id)
     if not config:
-        raise HTTPException(
-            status_code=500,
-            detail="Configuración de entidad no localizada en el repositorio central (MS-3805)."
+        raise PipelineException(
+            etapa="CONFIGURACION_TENANT_NO_ENCONTRADA",
+            mensaje=f"No se encontró ninguna configuración de base de datos activa para el client_id {client_id} en tn_gestion_bdconex.",
+            cliente_id=client_id,
+            tabla_afectada="tn_gestion_bdconex",
+            status_code=status.HTTP_404_NOT_FOUND
         )
+
+    # 3. Establecer conexión dinámica con la base de datos del cliente
+    host = config["hosting"]
+    port = int(config["puerto"] or 3306)
+    db_name = config["nombreBaseDeDatos"]
 
     try:
         connection = await aiomysql.connect(
-            host=config["hosting"],
-            port=int(config["puerto"] or 3306),
+            host=host,
+            port=port,
             user=config["usuario"],
             password=config["contrasena"],
-            db=config["nombreBaseDeDatos"],
+            db=db_name,
             autocommit=True
         )
         return connection
     except Exception as e:
-        print(f"[Database Manager] Error al conectar a la base de datos de la entidad {client_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="No fue posible establecer conexión con el repositorio de datos de la entidad (MS-3804)."
+        print(f"[Database Manager] Error al conectar a la DB del cliente {client_id} ({db_name}@{host}:{port}): {e}")
+        raise PipelineException(
+            etapa="CONEXION_DB_TENANT",
+            mensaje=f"Fallo al conectar con la base de datos de la entidad cliente {client_id} ({db_name} en {host}:{port}).",
+            detalle_tecnico=str(e),
+            cliente_id=client_id,
+            base_datos_cliente=f"{db_name}@{host}:{port}",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
