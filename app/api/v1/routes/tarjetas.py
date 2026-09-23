@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, HTTPException, Path, Body, Form, File, UploadFile
+from fastapi import APIRouter, Query, HTTPException, Path, Body, Form, File, UploadFile, BackgroundTasks, status
 from typing import List, Dict, Any, Optional
 from app.services.tarjetas_service import TarjetasService
 from app.utils.image_utils import ImageUtils
@@ -7,7 +7,8 @@ from app.schemas.tarjetas_schema import (
     ValidadorConfigSchema,
     BrandingCredentialsCreateSchema,
     BrandingCredentialsUpdateSchema,
-    ConsultaTarjetaSchema
+    ConsultaTarjetaSchema,
+    EmisionMasivaRequestSchema
 )
 
 router = APIRouter()
@@ -229,4 +230,107 @@ async def ejecutar_emision_recurrente(
 ):
     from app.services.scheduler_service import SchedulerService
     scheduler = SchedulerService()
-    return await scheduler.ejecutar_emision_recurrente(client_id=client_id)
+    return await scheduler.ejecutar_emision_recurrente(client_id=client_id)
+
+# HU-JCC-006: Emisión Masiva y Procesamiento de Lotes (Síncrono y Cola Asíncrona)
+@router.post("/emision-masiva")
+async def emision_masiva(
+    payload: EmisionMasivaRequestSchema = Body(...),
+    background_tasks: BackgroundTasks = None,
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+):
+    from app.services.emision_engine_service import EmisionEngineService
+    from app.repositories.tarjetas_repository import TarjetasRepository
+    import os
+
+    cid = client_id or int(os.getenv("CLIENT_ID", "20001"))
+    docs = [str(d).strip() for d in payload.identificaciones if str(d).strip()]
+    if not docs:
+        raise HTTPException(status_code=400, detail="La lista de identificaciones no contiene registros válidos.")
+
+    repo = TarjetasRepository()
+    engine = EmisionEngineService(repo)
+
+    # 1. Registrar cabecera del lote e ítems en BD
+    lote_id = await repo.create_emision_lote(
+        client_id=cid,
+        tipo_tarjeta=payload.tipo_tarjeta,
+        tipo_tramite=payload.tipo_tramite or "primeraVez",
+        total_registros=len(docs),
+        archivo_nombre=payload.archivo_nombre,
+        creado_por=payload.creado_por or "Administrador"
+    )
+    await repo.insert_emision_lote_items(lote_id=lote_id, documentos=docs, client_id=cid)
+
+    from app.config.queue_config import queue_config
+
+    # 2. Despacho: si el QueueWorker continuo está activo, el lote queda encolado para el Worker
+    if queue_config.WORKER_ENABLED:
+        return {
+            "status": "accepted",
+            "asincrono": True,
+            "lote_id": lote_id,
+            "total": len(docs),
+            "mensaje": f"Lote #{lote_id} con {len(docs)} registros encolado exitosamente. El Worker continuo lo procesará en segundo plano.",
+            "configuracion": queue_config.to_dict()
+        }
+    elif payload.asincrono or len(docs) > 10:
+        if background_tasks:
+            background_tasks.add_task(
+                engine.procesar_lote_emision,
+                identificaciones=docs,
+                tipo_tarjeta=payload.tipo_tarjeta,
+                tipo_tramite=payload.tipo_tramite or "primeraVez",
+                client_id=cid,
+                lote_id=lote_id
+            )
+        return {
+            "status": "accepted",
+            "asincrono": True,
+            "lote_id": lote_id,
+            "total": len(docs),
+            "mensaje": f"Lote #{lote_id} con {len(docs)} registros encolado en memoria (BackgroundTasks)."
+        }
+    else:
+        # Procesamiento síncrono inmediato (solo para pruebas pequeñas cuando el worker está apagado)
+        resumen = await engine.procesar_lote_emision(
+            identificaciones=docs,
+            tipo_tarjeta=payload.tipo_tarjeta,
+            tipo_tramite=payload.tipo_tramite or "primeraVez",
+            client_id=cid,
+            lote_id=lote_id
+        )
+        return {
+            "status": "success",
+            "asincrono": False,
+            "lote_id": lote_id,
+            "resumen": resumen
+        }
+
+@router.get("/emision-masiva/configuracion")
+async def get_configuracion_colas():
+    from app.config.queue_config import queue_config
+    return {
+        "status": "success",
+        "data": queue_config.to_dict()
+    }
+
+@router.get("/emision-masiva/lote/{lote_id}")
+async def get_estado_lote(
+    lote_id: int = Path(..., description="ID del lote"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+):
+    from app.repositories.tarjetas_repository import TarjetasRepository
+    import os
+    cid = client_id or int(os.getenv("CLIENT_ID", "20001"))
+    repo = TarjetasRepository()
+    lote = await repo.get_emision_lote(lote_id, cid)
+    if not lote:
+        raise HTTPException(status_code=404, detail=f"Lote #{lote_id} no encontrado.")
+    items = await repo.get_emision_lote_items(lote_id, cid, limit=200)
+    return {
+        "status": "success",
+        "lote": lote,
+        "items": items
+    }
+

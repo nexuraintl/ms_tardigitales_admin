@@ -1089,14 +1089,13 @@ class TarjetasRepository:
                 
                 if endpoint and endpoint.strip() and endpoint != "Todos":
                     clean_ep = endpoint.strip().strip('/')
-                    where_conditions.append("ttt.nombre LIKE %s")
-                    params.append(f"%{clean_ep}%")
+                    where_conditions.append("(tapi.url LIKE %s OR tapi.tipo_tarjeta LIKE %s)")
+                    params.extend([f"%{clean_ep}%", f"%{clean_ep}%"])
                 
                 if tipo and tipo.strip() and tipo != "Todos":
                     clean_tipo = tipo.strip()
-                    where_conditions.append("(ttasociado.nombre LIKE %s OR tapi.parametros_peticion LIKE %s)")
-                    params.append(f"%{clean_tipo}%")
-                    params.append(f'%"tipo": "{clean_tipo}"%')
+                    where_conditions.append("(tapi.tipo_asociado LIKE %s OR tapi.parametros_peticion LIKE %s)")
+                    params.extend([f"%{clean_tipo}%", f'%"tipo": "{clean_tipo}"%'])
                 
                 if texto and texto.strip():
                     t = f"%{texto.strip()}%"
@@ -1146,7 +1145,7 @@ class TarjetasRepository:
                     SELECT
                         tapi.id,
                         DATE_FORMAT(tapi.fecha_creacion, '%%Y-%%m-%%d %%H:%%i') AS fecha_hora,
-                        tapi.tipo_tarjeta AS endpoint,
+                        tapi.url AS endpoint,
                         tapi.metodo,
                         tapi.tipo_asociado AS tipo,
                         tapi.duracion_ms,
@@ -1190,3 +1189,509 @@ class TarjetasRepository:
             raise e
         finally:
             conn.close()
+
+    # =========================================================================
+    # GESTIÓN DE LOTES Y COLA DE EMISIÓN MASIVA (HU-JCC-006)
+    # =========================================================================
+
+    async def create_emision_lote(
+        self,
+        client_id: int,
+        tipo_tarjeta: str,
+        tipo_tramite: str,
+        total_registros: int,
+        archivo_nombre: Optional[str] = None,
+        creado_por: Optional[str] = None,
+    ) -> int:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cursor:
+                query = """
+                    INSERT INTO tn_tarjetavirtual_emision_lotes (
+                        client_id, tipo_tarjeta, tipo_tramite, archivo_nombre,
+                        total_registros, procesados, exitosos, duplicados, fallidos,
+                        estado, creado_por, fecha_creacion
+                    ) VALUES (%s, %s, %s, %s, %s, 0, 0, 0, 0, 'PENDIENTE', %s, NOW())
+                """
+                await cursor.execute(query, (
+                    client_id, tipo_tarjeta, tipo_tramite, archivo_nombre,
+                    total_registros, creado_por
+                ))
+                await conn.commit()
+                return cursor.lastrowid
+        finally:
+            conn.close()
+
+    async def insert_emision_lote_items(
+        self,
+        lote_id: int,
+        documentos: List[str],
+        client_id: Optional[int] = None
+    ) -> None:
+        if not documentos:
+            return
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cursor:
+                query = """
+                    INSERT INTO tn_tarjetavirtual_emision_lote_items (
+                        lote_id, documento_o_nit, resultado
+                    ) VALUES (%s, %s, 'PENDIENTE')
+                """
+                values = [(lote_id, doc.strip()) for doc in documentos if doc.strip()]
+                if values:
+                    await cursor.executemany(query, values)
+                    await conn.commit()
+        finally:
+            conn.close()
+
+    async def update_emision_lote_progress(
+        self,
+        lote_id: int,
+        procesados: int,
+        exitosos: int,
+        duplicados: int,
+        fallidos: int,
+        estado: str,
+        mensaje: Optional[str] = None,
+        finalizado: bool = False,
+        client_id: Optional[int] = None
+    ) -> None:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cursor:
+                if finalizado:
+                    query = """
+                        UPDATE tn_tarjetavirtual_emision_lotes
+                        SET procesados = %s, exitosos = %s, duplicados = %s, fallidos = %s,
+                            estado = %s, mensaje = %s, fecha_fin = NOW()
+                        WHERE id = %s
+                    """
+                    await cursor.execute(query, (procesados, exitosos, duplicados, fallidos, estado, mensaje, lote_id))
+                else:
+                    query = """
+                        UPDATE tn_tarjetavirtual_emision_lotes
+                        SET procesados = %s, exitosos = %s, duplicados = %s, fallidos = %s,
+                            estado = %s, mensaje = %s
+                        WHERE id = %s
+                    """
+                    await cursor.execute(query, (procesados, exitosos, duplicados, fallidos, estado, mensaje, lote_id))
+                await conn.commit()
+        finally:
+            conn.close()
+
+    async def update_emision_lote_item(
+        self,
+        lote_id: int,
+        documento: str,
+        resultado: str,
+        tarjeta_id: Optional[int] = None,
+        mensaje_detalle: Optional[str] = None,
+        client_id: Optional[int] = None
+    ) -> None:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cursor:
+                query = """
+                    UPDATE tn_tarjetavirtual_emision_lote_items
+                    SET resultado = %s, tarjeta_id = %s, mensaje_detalle = %s
+                    WHERE lote_id = %s AND documento_o_nit = %s
+                """
+                await cursor.execute(query, (resultado, tarjeta_id, mensaje_detalle, lote_id, documento))
+                await conn.commit()
+        finally:
+            conn.close()
+
+    async def get_emision_lote(self, lote_id: int, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                query = "SELECT * FROM tn_tarjetavirtual_emision_lotes WHERE id = %s"
+                await cursor.execute(query, (lote_id,))
+                return await cursor.fetchone()
+        finally:
+            conn.close()
+
+    async def get_emision_lote_items(
+        self,
+        lote_id: int,
+        client_id: Optional[int] = None,
+        limit: int = 200
+    ) -> List[Dict[str, Any]]:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                query = """
+                    SELECT * FROM tn_tarjetavirtual_emision_lote_items
+                    WHERE lote_id = %s
+                    ORDER BY id ASC
+                    LIMIT %s
+                """
+                await cursor.execute(query, (lote_id, limit))
+                return await cursor.fetchall()
+        finally:
+            conn.close()
+
+    async def get_pending_queue_items(
+        self,
+        limit: int = 10,
+        client_id: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                query = """
+                    SELECT 
+                        i.id,
+                        i.lote_id,
+                        l.client_id,
+                        i.documento_o_nit,
+                        i.resultado,
+                        l.tipo_tarjeta,
+                        l.tipo_tramite
+                    FROM tn_tarjetavirtual_emision_lote_items i
+                    INNER JOIN tn_tarjetavirtual_emision_lotes l ON i.lote_id = l.id
+                    WHERE i.resultado = 'PENDIENTE' AND l.estado IN ('EN_COLA', 'PENDIENTE', 'PROCESANDO')
+                    ORDER BY i.id ASC
+                    LIMIT %s
+                """
+                await cursor.execute(query, (limit,))
+                return await cursor.fetchall()
+        finally:
+            conn.close()
+
+    async def claim_queue_item(
+        self,
+        item_id: int,
+        lote_id: int,
+        client_id: Optional[int] = None
+    ) -> None:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "UPDATE tn_tarjetavirtual_emision_lote_items SET resultado = 'PROCESANDO' WHERE id = %s",
+                    (item_id,)
+                )
+                await cursor.execute(
+                    "UPDATE tn_tarjetavirtual_emision_lotes SET estado = 'PROCESANDO' WHERE id = %s AND estado IN ('EN_COLA', 'PENDIENTE')",
+                    (lote_id,)
+                )
+                await conn.commit()
+        finally:
+            conn.close()
+
+    async def update_queue_item_result(
+        self,
+        item_id: int,
+        lote_id: int,
+        resultado: str,
+        tarjeta_id: Optional[int] = None,
+        mensaje_detalle: Optional[str] = None,
+        client_id: Optional[int] = None
+    ) -> None:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    UPDATE tn_tarjetavirtual_emision_lote_items
+                    SET resultado = %s, tarjeta_id = %s, mensaje_detalle = %s, fecha_proceso = NOW()
+                    WHERE id = %s
+                    """,
+                    (resultado, tarjeta_id, mensaje_detalle, item_id)
+                )
+                col_inc = "exitosos = exitosos + 1" if resultado == "emitido_exitosamente" else (
+                    "duplicados = duplicados + 1" if resultado == "omitido_duplicado" else "fallidos = fallidos + 1"
+                )
+                await cursor.execute(
+                    f"""
+                    UPDATE tn_tarjetavirtual_emision_lotes
+                    SET procesados = procesados + 1, {col_inc}
+                    WHERE id = %s
+                    """,
+                    (lote_id,)
+                )
+                await conn.commit()
+        finally:
+            conn.close()
+
+    async def finalize_lote_if_completed(
+        self,
+        lote_id: int,
+        client_id: Optional[int] = None
+    ) -> Optional[str]:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    """
+                    SELECT COUNT(*) as pendientes
+                    FROM tn_tarjetavirtual_emision_lote_items
+                    WHERE lote_id = %s AND resultado IN ('PENDIENTE', 'PROCESANDO')
+                    """,
+                    (lote_id,)
+                )
+                res = await cursor.fetchone()
+                if res and res["pendientes"] == 0:
+                    await cursor.execute(
+                        "SELECT total_registros, exitosos, duplicados, fallidos FROM tn_tarjetavirtual_emision_lotes WHERE id = %s",
+                        (lote_id,)
+                    )
+                    lote = await cursor.fetchone()
+                    exitosos = lote["exitosos"] if lote else 0
+                    duplicados = lote["duplicados"] if lote else 0
+                    fallidos = lote["fallidos"] if lote else 0
+                    estado_final = "FINALIZADO" if (exitosos > 0 or duplicados > 0) else "FALLIDO"
+                    msg = f"Lote completado: {exitosos} emitidos, {duplicados} omitidos por duplicado, {fallidos} no procesados o fallidos."
+                    await cursor.execute(
+                        """
+                        UPDATE tn_tarjetavirtual_emision_lotes
+                        SET estado = %s, mensaje = %s, fecha_fin = NOW()
+                        WHERE id = %s
+                        """,
+                        (estado_final, msg, lote_id)
+                    )
+                    await conn.commit()
+                    return estado_final
+                return None
+        finally:
+            conn.close()
+
+    async def get_queue_config(self, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        conn = await get_client_connection(client_id)
+        try:
+            cid = client_id or int(os.getenv("CLIENT_ID", "20001"))
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                query = "SELECT * FROM tn_tarjetavirtual_config_colas WHERE client_id = %s"
+                await cursor.execute(query, (cid,))
+                return await cursor.fetchone()
+        finally:
+            conn.close()
+
+    async def save_queue_config(self, client_id: Optional[int], config_data: Dict[str, Any]) -> Dict[str, Any]:
+        conn = await get_client_connection(client_id)
+        try:
+            cid = client_id or int(os.getenv("CLIENT_ID", "20001"))
+            async with conn.cursor() as cursor:
+                query = """
+                    INSERT INTO tn_tarjetavirtual_config_colas (
+                        client_id, worker_enabled, poll_interval_seconds, batch_size,
+                        item_delay_seconds, circuit_breaker_fail_threshold,
+                        circuit_breaker_cooldown_seconds, max_retries_per_item,
+                        scheduler_enabled, scheduler_interval_seconds, scheduler_auto_enqueue
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        worker_enabled = VALUES(worker_enabled),
+                        poll_interval_seconds = VALUES(poll_interval_seconds),
+                        batch_size = VALUES(batch_size),
+                        item_delay_seconds = VALUES(item_delay_seconds),
+                        circuit_breaker_fail_threshold = VALUES(circuit_breaker_fail_threshold),
+                        circuit_breaker_cooldown_seconds = VALUES(circuit_breaker_cooldown_seconds),
+                        max_retries_per_item = VALUES(max_retries_per_item),
+                        scheduler_enabled = VALUES(scheduler_enabled),
+                        scheduler_interval_seconds = VALUES(scheduler_interval_seconds),
+                        scheduler_auto_enqueue = VALUES(scheduler_auto_enqueue)
+                """
+                worker_en = config_data.get("worker_enabled", config_data.get("habilitado", True))
+                poll_int = config_data.get("poll_interval_seconds", config_data.get("intervalo_sondeo_segundos", 5.0))
+                b_size = config_data.get("batch_size", config_data.get("tamano_lote", 10))
+                item_delay = config_data.get("item_delay_seconds", config_data.get("delay_por_item_segundos", 0.05))
+                cb_fail = config_data.get("circuit_breaker_fail_threshold", config_data.get("circuit_breaker_max_fallos", 3))
+                cb_cool = config_data.get("circuit_breaker_cooldown_seconds", config_data.get("circuit_breaker_cooldown_segundos", 60))
+                sched_sec = config_data.get("scheduler_interval_seconds")
+                if not sched_sec and "scheduler_intervalo_minutos" in config_data:
+                    sched_sec = int(config_data["scheduler_intervalo_minutos"]) * 60
+                elif not sched_sec:
+                    sched_sec = 3600
+
+                await cursor.execute(query, (
+                    cid,
+                    1 if worker_en else 0,
+                    float(poll_int),
+                    int(b_size),
+                    float(item_delay),
+                    int(cb_fail),
+                    int(cb_cool),
+                    int(config_data.get("max_retries_per_item", 2)),
+                    1 if config_data.get("scheduler_enabled", True) else 0,
+                    int(sched_sec),
+                    1 if config_data.get("scheduler_auto_enqueue", True) else 0
+                ))
+                await conn.commit()
+            return await self.get_queue_config(cid)
+        finally:
+            conn.close()
+
+    async def get_emision_lotes_list(
+        self,
+        client_id: Optional[int] = None,
+        page: int = 1,
+        page_size: int = 10,
+        estado: Optional[str] = None,
+        tipo_tarjeta: Optional[str] = None
+    ) -> Dict[str, Any]:
+        conn = await get_client_connection(client_id)
+        try:
+            cid = client_id or int(os.getenv("CLIENT_ID", "20001"))
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                where_clauses = ["client_id = %s"]
+                params: List[Any] = [cid]
+                if estado and estado != "TODOS":
+                    where_clauses.append("estado = %s")
+                    params.append(estado)
+                if tipo_tarjeta and tipo_tarjeta != "TODOS":
+                    where_clauses.append("tipo_tarjeta = %s")
+                    params.append(tipo_tarjeta)
+
+                where_sql = " AND ".join(where_clauses)
+                count_query = f"SELECT COUNT(*) as total FROM tn_tarjetavirtual_emision_lotes WHERE {where_sql}"
+                await cursor.execute(count_query, tuple(params))
+                total = (await cursor.fetchone())["total"]
+
+                offset = (page - 1) * page_size
+                query = f"""
+                    SELECT 
+                        id, client_id, tipo_tarjeta, tipo_tramite, total_registros,
+                        procesados, exitosos, duplicados, fallidos, estado, archivo_nombre,
+                        mensaje, creado_por,
+                        DATE_FORMAT(fecha_creacion, '%%Y-%%m-%%d %%H:%%i:%%s') as fecha_creacion,
+                        DATE_FORMAT(fecha_fin, '%%Y-%%m-%%d %%H:%%i:%%s') as fecha_fin,
+                        TIMESTAMPDIFF(SECOND, fecha_creacion, fecha_fin) as tiempo_proceso_segundos
+                    FROM tn_tarjetavirtual_emision_lotes
+                    WHERE {where_sql}
+                    ORDER BY id DESC
+                    LIMIT %s OFFSET %s
+                """
+                query_params = list(params) + [page_size, offset]
+                await cursor.execute(query, tuple(query_params))
+                items = await cursor.fetchall()
+
+                return {
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "total_pages": (total + page_size - 1) // page_size if total > 0 else 1,
+                    "items": items
+                }
+        finally:
+            conn.close()
+
+    async def get_queue_metrics(self, client_id: Optional[int] = None) -> Dict[str, Any]:
+        conn = await get_client_connection(client_id)
+        try:
+            cid = client_id or int(os.getenv("CLIENT_ID", "20001"))
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    """
+                    SELECT 
+                        COUNT(*) as total_lotes,
+                        COALESCE(SUM(CASE WHEN estado IN ('EN_COLA', 'PROCESANDO', 'PENDIENTE') THEN 1 ELSE 0 END), 0) as lotes_activos,
+                        COALESCE(SUM(CASE WHEN estado = 'FINALIZADO' THEN 1 ELSE 0 END), 0) as lotes_completados,
+                        COALESCE(SUM(CASE WHEN estado = 'FALLIDO' THEN 1 ELSE 0 END), 0) as lotes_fallidos,
+                        COALESCE(SUM(total_registros), 0) as total_historico,
+                        COALESCE(SUM(exitosos), 0) as total_exitosos,
+                        COALESCE(SUM(duplicados), 0) as total_duplicados,
+                        COALESCE(SUM(fallidos), 0) as total_fallidos
+                    FROM tn_tarjetavirtual_emision_lotes WHERE client_id = %s
+                    """,
+                    (cid,)
+                )
+                metricas_lotes = await cursor.fetchone() or {}
+
+                await cursor.execute(
+                    """
+                    SELECT COUNT(*) as items_pendientes
+                    FROM tn_tarjetavirtual_emision_lote_items i
+                    INNER JOIN tn_tarjetavirtual_emision_lotes l ON i.lote_id = l.id
+                    WHERE l.client_id = %s AND i.resultado = 'PENDIENTE'
+                    """,
+                    (cid,)
+                )
+                metricas_items = await cursor.fetchone() or {}
+
+                return {
+                    "total_lotes": int(metricas_lotes.get("total_lotes") or 0),
+                    "lotes_activos": int(metricas_lotes.get("lotes_activos") or 0),
+                    "lotes_completados": int(metricas_lotes.get("lotes_completados") or 0),
+                    "lotes_fallidos": int(metricas_lotes.get("lotes_fallidos") or 0),
+                    "total_historico_registros": int(metricas_lotes.get("total_historico") or 0),
+                    "total_exitosos": int(metricas_lotes.get("total_exitosos") or 0),
+                    "total_duplicados": int(metricas_lotes.get("total_duplicados") or 0),
+                    "total_fallidos": int(metricas_lotes.get("total_fallidos") or 0),
+                    "items_pendientes_en_cola": int(metricas_items.get("items_pendientes") or 0)
+                }
+        finally:
+            conn.close()
+
+    async def create_sincronizacion_log(self, data: Dict[str, Any], client_id: Optional[int] = None) -> int:
+        cid = client_id or int(os.getenv("CLIENT_ID", "20001"))
+        conn = await get_client_connection(cid)
+        try:
+            async with conn.cursor() as cursor:
+                query = """
+                    INSERT INTO tn_tarjetavirtual_sincronizacion_logs (
+                        origen, fecha_inicio, fecha_fin, duracion_ms,
+                        estado, total_encolados, contadores_encolados, sociedades_encoladas,
+                        errores_count, detalle
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                values = (
+                    data.get("origen", "PROGRAMADO"),
+                    data.get("fecha_inicio") or datetime.now(),
+                    data.get("fecha_fin") or datetime.now(),
+                    int(data.get("duracion_ms", 0)),
+                    data.get("estado", "EXITOSO"),
+                    int(data.get("total_encolados", 0)),
+                    int(data.get("contadores_encolados", 0)),
+                    int(data.get("sociedades_encoladas", 0)),
+                    int(data.get("errores_count", 0)),
+                    (data.get("detalle") or "")[:500]
+                )
+                await cursor.execute(query, values)
+                await conn.commit()
+                return cursor.lastrowid
+        except Exception as e:
+            print(f"[TarjetasRepository] Error al insertar sincronizacion_log: {e}")
+            return 0
+        finally:
+            conn.close()
+
+    async def get_sincronizacion_logs(self, client_id: Optional[int] = None, limit: int = 15) -> List[Dict[str, Any]]:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                query = """
+                    SELECT id, origen, fecha_inicio, fecha_fin, duracion_ms,
+                           estado, total_encolados, contadores_encolados, sociedades_encoladas,
+                           errores_count, detalle, creado_en
+                    FROM tn_tarjetavirtual_sincronizacion_logs
+                    ORDER BY id DESC
+                    LIMIT %s
+                """
+                await cursor.execute(query, (limit,))
+                rows = await cursor.fetchall()
+                result = []
+                for r in rows:
+                    result.append({
+                        "id": r["id"],
+                        "origen": r["origen"],
+                        "fecha_inicio": r["fecha_inicio"].isoformat() if hasattr(r["fecha_inicio"], "isoformat") and r["fecha_inicio"] else str(r["fecha_inicio"]),
+                        "fecha_fin": r["fecha_fin"].isoformat() if hasattr(r["fecha_fin"], "isoformat") and r["fecha_fin"] else (str(r["fecha_fin"]) if r["fecha_fin"] else None),
+                        "duracion_ms": r["duracion_ms"],
+                        "estado": r["estado"],
+                        "total_encolados": r["total_encolados"],
+                        "contadores_encolados": r["contadores_encolados"],
+                        "sociedades_encoladas": r["sociedades_encoladas"],
+                        "errores_count": r["errores_count"],
+                        "detalle": r["detalle"],
+                        "creado_en": r["creado_en"].isoformat() if hasattr(r["creado_en"], "isoformat") and r["creado_en"] else str(r["creado_en"])
+                    })
+                return result
+        finally:
+            conn.close()
+
+    async def get_ultima_sincronizacion_log(self, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        logs = await self.get_sincronizacion_logs(client_id, limit=1)
+        return logs[0] if logs else None
+
