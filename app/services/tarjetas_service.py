@@ -48,11 +48,12 @@ class TarjetasService:
             )
 
         try:
-            # Consultar API de la JCC a través del módulo de integraciones
+            # Consultar API de la JCC a través del módulo de integraciones (con auditoría automática garantizada)
             result = await self.jcc_client.consultar_registro(
                 documento=documento,
                 tipo_tarjeta=tipo_tarjeta,
-                tipo=tipo
+                tipo=tipo,
+                client_id=client_id,
             )
         except Exception as e:
             print(f"[TarjetasService] Error al consultar registro JCC: {e}")
@@ -71,36 +72,6 @@ class TarjetasService:
                 mensaje="No se encontró ningún registro oficial para el documento especificado en la JCC.",
                 cliente_id=client_id,
                 status_code=status.HTTP_404_NOT_FOUND
-            )
-
-        duracion_ms = int((time.perf_counter() - start) * 1000)
-
-        try:
-            await self.auditoria.registrar(
-                client_id=client_id,
-                tipo_tarjeta=tipo_tarjeta,
-                tipo=tipo,
-                metodo="POST",
-                url=self.jcc_client.last_url or "",
-                parametros_peticion={
-                    "tipo": tipo,
-                    "documento": documento,
-                    "cambiarEstado": False,
-                },
-                cuerpo_respuesta=result,
-                duracion_ms=duracion_ms,
-            )
-        except PipelineException:
-            raise
-        except Exception as e:
-            print(f"[TarjetasService] Error guardando auditoría: {e}")
-            raise PipelineException(
-                etapa="REGISTRO_AUDITORIA",
-                mensaje="La consulta a la JCC fue exitosa, pero falló el registro en la tabla de auditoría (jcc_auditoria_api).",
-                detalle_tecnico=str(e),
-                cliente_id=client_id,
-                tabla_afectada="jcc_auditoria_api",
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
         return {
@@ -188,6 +159,7 @@ class TarjetasService:
                 documento=documento,
                 tipo_tarjeta=tipo_tarjeta,
                 tipo=tipo,
+                client_id=client_id,
             )
         except Exception as e:
             print(f"[TarjetasService] Error llamando API JCC en create_tarjeta_contador: {e}")
@@ -291,6 +263,7 @@ class TarjetasService:
                 documento=documento,
                 tipo_tarjeta=tipo_tarjeta,
                 tipo=tipo,
+                client_id=client_id,
             )
         except Exception as e:
             print(f"[TarjetasService] Error llamando API JCC en create_tarjeta_sociedad: {e}")
