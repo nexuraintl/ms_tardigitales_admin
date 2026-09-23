@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from fastapi import UploadFile, File, Form
 from datetime import datetime
 from enum import Enum
@@ -122,3 +122,11 @@ class SociedadCreateSchema(BaseModel):
 class ConsultaTarjetaSchema(BaseModel):
     documento: str = Field(..., description="Número de documento de identificación")
     tipo: Optional[str] = Field("", description="Tipo de consulta ('primeraVez', 'duplicado', 'sustitucion', 'modificacion', etc.)")
+
+class EmisionMasivaRequestSchema(BaseModel):
+    tipo_tarjeta: str = Field("contadores", description="Tipo de titular: 'contadores' o 'sociedades'")
+    tipo_tramite: Optional[str] = Field("primeraVez", description="Tipo de trámite ('primeraVez', 'duplicado', 'sustitucion', 'modificacion')")
+    identificaciones: List[str] = Field(..., description="Lista de números de documento o NITs a emitir")
+    archivo_nombre: Optional[str] = Field(None, description="Nombre del archivo fuente CSV")
+    asincrono: Optional[bool] = Field(False, description="Forzar procesamiento asíncrono en segundo plano")
+    creado_por: Optional[str] = Field("Administrador", description="Usuario administrativo que realiza la carga")

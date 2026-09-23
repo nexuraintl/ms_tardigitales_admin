@@ -1,6 +1,12 @@
 import os
+import time
+import logging
 import httpx
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from app.services.auditoria_service import AuditoriaService
+from app.repositories.tarjetas_repository import TarjetasRepository
+
+logger = logging.getLogger("jcc_client")
 
 PROD_BASE_URL = os.getenv("JCC_API_BASE_URL", "https://apitarjetas.jcc.gov.co").rstrip("/")
 
@@ -12,9 +18,10 @@ JCC_API_BEARER_TOKEN = os.getenv(
 
 class JccClient:
 
-    def __init__(self):
+    def __init__(self, auditoria_service: Optional[AuditoriaService] = None):
         self.last_url: str = ""
         self.last_metodo: str = "POST"
+        self.auditoria = auditoria_service or AuditoriaService(TarjetasRepository())
 
     def _normalizar_respuesta(self, data: Dict[str, Any]) -> Dict[str, Any]:
         if "data" in data and isinstance(data["data"], dict):
@@ -34,7 +41,13 @@ class JccClient:
         else:
             return "".join(c for c in str(documento).strip() if c.isalnum())
 
-    async def consultar_registro(self, documento: str, tipo_tarjeta: str = "contadores", tipo: str = "") -> Dict[str, Any]:
+    async def consultar_registro(
+        self,
+        documento: str,
+        tipo_tarjeta: str = "contadores",
+        tipo: str = "",
+        client_id: Optional[int] = None
+    ) -> Dict[str, Any]:
         documento_limpio = self._limpiar_documento(documento, tipo_tarjeta) if documento else ""
 
         prod_endpoint = "/sociedades/" if tipo_tarjeta == "sociedades" else "/contadores/"
@@ -56,22 +69,59 @@ class JccClient:
             "Accept": "application/json"
         }
 
+        resolved_client_id = client_id or int(os.getenv("CLIENT_ID", "20001"))
+        start_time = time.perf_counter()
+
         try:
             async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
                 response = await client.post(url, json=payload, headers=headers)
+
+            duracion_ms = int((time.perf_counter() - start_time) * 1000)
+
+            # Extraer cuerpo para auditoría
+            try:
+                cuerpo_audit = response.json() if response.status_code == 200 else {"http_status": response.status_code, "body": response.text}
+            except Exception:
+                cuerpo_audit = {"http_status": response.status_code, "raw": response.text}
+
+            # Registro automático e incondicional de auditoría API (Obligación Contractual)
+            try:
+                await self.auditoria.registrar(
+                    client_id=resolved_client_id,
+                    tipo_tarjeta=tipo_tarjeta,
+                    tipo=tipo_final,
+                    metodo="POST",
+                    url=url,
+                    parametros_peticion=payload,
+                    cuerpo_respuesta=cuerpo_audit,
+                    duracion_ms=duracion_ms
+                )
+            except Exception as audit_err:
+                logger.error(f"[JccClient] Error al registrar auditoría API: {audit_err}")
 
             if response.status_code == 200:
                 raw_data = response.json()
                 data = self._normalizar_respuesta(raw_data)
 
                 if "error" in data and data["error"]:
-                    return {"encontrado": False, "data": None, "disponibles": [], "error": data["error"]}
+                    return {
+                        "encontrado": False,
+                        "data": None,
+                        "disponibles": [],
+                        "es_error_conexion": False,
+                        "error": data["error"]
+                    }
                 
                 disponibles = data.get("disponibles", [])
                 pdf = data.get("pdf")
                 
                 if not disponibles and not pdf:
-                    return {"encontrado": False, "data": None, "disponibles": []}
+                    return {
+                        "encontrado": False,
+                        "data": None,
+                        "disponibles": [],
+                        "es_error_conexion": False
+                    }
 
                 disponibles_limpios = []
                 for raw_item in (disponibles if disponibles else [{}]):
@@ -114,20 +164,40 @@ class JccClient:
 
                 return {
                     "encontrado": True,
+                    "es_error_conexion": False,
                     "data": disponibles_limpios[0] if disponibles_limpios else None,
                     "disponibles": disponibles_limpios
                 }
             else:
+                es_servidor = response.status_code >= 500
                 return {
                     "encontrado": False,
+                    "es_error_conexion": es_servidor,
                     "data": None,
-                    "error": f"Error de comunicación HTTP {response.status_code}"
+                    "error": f"Error de comunicación HTTP {response.status_code} desde la API JCC"
                 }
 
         except Exception as e:
+            duracion_ms = int((time.perf_counter() - start_time) * 1000)
+            try:
+                await self.auditoria.registrar(
+                    client_id=resolved_client_id,
+                    tipo_tarjeta=tipo_tarjeta,
+                    tipo=tipo_final,
+                    metodo="POST",
+                    url=url,
+                    parametros_peticion=payload,
+                    cuerpo_respuesta={"error_conexion": str(e)},
+                    duracion_ms=duracion_ms
+                )
+            except Exception as audit_err:
+                logger.error(f"[JccClient] Error al registrar auditoría API tras fallo de red: {audit_err}")
+
             return {
                 "encontrado": False,
+                "es_error_conexion": True,
                 "data": None,
-                "error": f"Error de conexión con la API de la JCC: {str(e)}"
+                "error": f"Error de conexión con la API de la JCC (posible VPN inactiva o servicio inaccesible): {str(e)}"
             }
+
 

@@ -4,7 +4,7 @@ from fastapi import FastAPI, APIRouter, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
-from app.api.v1.routes import tarjetas
+from app.api.v1.routes import tarjetas, colas
 
 from app.core.exceptions import PipelineException
 
@@ -87,34 +87,65 @@ async def custom_swagger_ui():
 admin_router = APIRouter(prefix="/tardigitales/admin")
 
 admin_router.include_router(tarjetas.router, prefix="/tarjetas", tags=["Admin - Tarjetas Digitales"])
+admin_router.include_router(colas.router, tags=["Admin - Colas y Procesos"])
 
 app.include_router(admin_router)
 
-# HU-JCC-005: Tarea programada recurrente (Background Task Loop)
-async def _iniciar_tarea_programada_recurrente():
-    import os, asyncio
-    enable_scheduler = os.getenv("ENABLE_SCHEDULER", "true").lower() == "true"
-    interval_seconds = int(os.getenv("SCHEDULER_INTERVAL_SECONDS", "3600"))
-    if not enable_scheduler:
-        print("[Scheduler] Tarea programada recurrente deshabilitada por configuración.")
+# -------------------------------------------------------------
+# WORKER CONTINUO DE PROCESAMIENTO DE COLAS (DATABASE POLLING CONSUMER)
+# -------------------------------------------------------------
+async def _iniciar_queue_worker():
+    from app.services.queue_worker_service import queue_worker
+    from app.config.queue_config import queue_config
+
+    if not queue_config.WORKER_ENABLED:
+        print("[QueueWorker] Worker de colas deshabilitado por configuración (QUEUE_WORKER_ENABLED=false).")
         return
 
-    print(f"[Scheduler] Tarea programada HU-JCC-005 iniciada (Intervalo: {interval_seconds}s)...")
-    from app.services.scheduler_service import SchedulerService
-    scheduler = SchedulerService()
+    await queue_worker.iniciar_worker()
+
+# HU-JCC-005: Tarea programada recurrente (Background Task Loop)
+async def _iniciar_tarea_programada_recurrente():
+    from app.config.queue_config import queue_config
+    import os, asyncio
+
+    client_id = int(os.getenv("CLIENT_ID", "20001"))
+    from app.services.scheduler_service import scheduler_service
     
     await asyncio.sleep(10)
     while True:
+        if not queue_config.SCHEDULER_ENABLED:
+            await asyncio.sleep(60)
+            continue
+
         try:
-            print("[Scheduler] Ejecutando ciclo recurrente de emisión HU-JCC-005...")
-            await scheduler.ejecutar_emision_recurrente()
+            print(f"[Scheduler] Ejecutando ciclo recurrente de emisión HU-JCC-005 (Intervalo DB: {queue_config.SCHEDULER_INTERVAL_SECONDS}s)...")
+            await scheduler_service.ejecutar_emision_recurrente(client_id=client_id)
         except Exception as e:
             print(f"[Scheduler] Error en ciclo de emisión recurrente: {e}")
-        await asyncio.sleep(interval_seconds)
+
+        await asyncio.sleep(queue_config.SCHEDULER_INTERVAL_SECONDS)
 
 @app.on_event("startup")
 async def startup_event():
     import asyncio
+    import os
+    from app.config.queue_config import queue_config
+    from app.repositories.tarjetas_repository import TarjetasRepository
+
+    # 1. Cargar configuración dinámica de colas y worker desde la Base de Datos
+    try:
+        cid = int(os.getenv("CLIENT_ID", "20001"))
+        repo = TarjetasRepository()
+        config_db = await repo.get_queue_config(cid)
+        if config_db:
+            queue_config.load_from_db(config_db)
+            print(f"[Config] Configuración de colas cargada desde MySQL (tn_tarjetavirtual_config_colas) para cliente {cid}.")
+    except Exception as e:
+        print(f"[Config] Usando configuración por defecto de colas en memoria ({e})")
+
+    # 2. Iniciar tareas en segundo plano
+    asyncio.create_task(_iniciar_queue_worker())
     asyncio.create_task(_iniciar_tarea_programada_recurrente())
 
 # Ruta informativa raíz
