@@ -3,6 +3,7 @@ import aiomysql
 from fastapi import status
 from app.core.mysql import get_mysql_connection
 from app.core.exceptions import PipelineException
+from app.constants import DEFAULT_CLIENT_ID
 
 async def get_client_mysql_config(client_id: int):
     if not os.getenv("DB1_HOST"):
@@ -54,10 +55,15 @@ async def get_client_mysql_config(client_id: int):
         connection.close()
 
 async def get_client_connection(client_id: int | None = None):
-    # 1. Resolver el client_id
+    # 1. Resolver el client_id (con fallback temporal a la constante global del microservicio)
     if not client_id:
         default_id = os.getenv("CLIENT_ID")
-        client_id = int(default_id) if default_id else None
+        if default_id and str(default_id).strip().isdigit():
+            client_id = int(str(default_id).strip())
+        else:
+            # NOTA: Solución temporal para evitar fallos en workers/schedulers
+            # cuando el archivo .env es sobreescrito en despliegues automatizados (Preproducción).
+            client_id = DEFAULT_CLIENT_ID
 
     if not client_id:
         raise PipelineException(

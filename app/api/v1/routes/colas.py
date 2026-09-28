@@ -7,6 +7,7 @@ from app.repositories.tarjetas_repository import TarjetasRepository
 from app.services.scheduler_service import scheduler_service
 from app.services.queue_worker_service import queue_worker
 from app.config.queue_config import queue_config
+from app.constants import DEFAULT_CLIENT_ID
 
 router = APIRouter(prefix="/colas", tags=["Admin - Colas y Procesos"])
 repo = TarjetasRepository()
@@ -23,7 +24,7 @@ async def get_metricas_colas(
     telemetría del worker en segundo plano, estado del circuit breaker,
     scheduler y conteos de registros y lotes.
     """
-    cid = client_id or int(os.getenv("CLIENT_ID", "20001"))
+    cid = client_id or DEFAULT_CLIENT_ID
     metricas_raw = await repo.get_queue_metrics(cid)
     worker_status = queue_worker.get_status()
     scheduler_status = scheduler_service.get_status()
