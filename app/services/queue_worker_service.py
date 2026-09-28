@@ -4,6 +4,7 @@ from typing import Optional
 from app.config.queue_config import queue_config
 from app.repositories.tarjetas_repository import TarjetasRepository
 from app.services.emision_engine_service import EmisionEngineService
+from app.constants import DEFAULT_CLIENT_ID
 
 logger = logging.getLogger("queue_worker")
 
@@ -59,8 +60,11 @@ class QueueWorkerService:
 
             try:
                 self.estado = "EN_ESPERA"
-                # 1. Extraer paquete de tareas pendientes (con límite parametrizable)
-                items = await self.repository.get_pending_queue_items(limit=queue_config.BATCH_SIZE)
+                # 1. Extraer paquete de tareas pendientes (con límite parametrizable y fallback de tenant)
+                items = await self.repository.get_pending_queue_items(
+                    limit=queue_config.BATCH_SIZE,
+                    client_id=DEFAULT_CLIENT_ID
+                )
 
                 if not items:
                     # No hay tareas pendientes en la cola: reposo de bajo consumo

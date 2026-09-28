@@ -107,9 +107,10 @@ async def _iniciar_queue_worker():
 # HU-JCC-005: Tarea programada recurrente (Background Task Loop)
 async def _iniciar_tarea_programada_recurrente():
     from app.config.queue_config import queue_config
+    from app.constants import DEFAULT_CLIENT_ID
     import os, asyncio
 
-    client_id = int(os.getenv("CLIENT_ID", "20001"))
+    client_id = int(os.getenv("CLIENT_ID")) if os.getenv("CLIENT_ID") and os.getenv("CLIENT_ID").isdigit() else DEFAULT_CLIENT_ID
     from app.services.scheduler_service import scheduler_service
     
     await asyncio.sleep(10)
@@ -131,11 +132,12 @@ async def startup_event():
     import asyncio
     import os
     from app.config.queue_config import queue_config
+    from app.constants import DEFAULT_CLIENT_ID
     from app.repositories.tarjetas_repository import TarjetasRepository
 
     # 1. Cargar configuración dinámica de colas y worker desde la Base de Datos
     try:
-        cid = int(os.getenv("CLIENT_ID", "20001"))
+        cid = int(os.getenv("CLIENT_ID")) if os.getenv("CLIENT_ID") and os.getenv("CLIENT_ID").isdigit() else DEFAULT_CLIENT_ID
         repo = TarjetasRepository()
         config_db = await repo.get_queue_config(cid)
         if config_db:
