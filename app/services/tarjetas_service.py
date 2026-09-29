@@ -147,6 +147,29 @@ class TarjetasService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    async def get_tarjeta_by_hash(self, hash_sha256: str, tipo_tarjeta: Optional[str] = None, client_id: Optional[int] = None) -> Dict[str, Any]:
+        try:
+            tarjeta = await self.repository.get_by_hash(hash_sha256, tipo_tarjeta, client_id)
+            if not tarjeta:
+                raise PipelineException(
+                    etapa="TABLA_PRINCIPAL",
+                    mensaje="Tarjeta digital no encontrada con el hash suministrado.",
+                    cliente_id=client_id,
+                    status_code=status.HTTP_404_NOT_FOUND
+                )
+            return tarjeta
+        except PipelineException:
+            raise
+        except Exception as e:
+            print(f"[TarjetasService] Error al obtener tarjeta por hash {hash_sha256}: {e}")
+            raise PipelineException(
+                etapa="TABLA_PRINCIPAL",
+                mensaje="No fue posible consultar la tarjeta solicitada con el hash indicado.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
     async def create_tarjeta_contador(
         self,
         documento: str,
