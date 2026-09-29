@@ -1,6 +1,7 @@
 import aiomysql
 import json
 import math
+import hashlib
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from app.core.database import get_client_connection
@@ -185,7 +186,8 @@ class TarjetasRepository:
                             ttc.acta_jcc,
                             DATE_FORMAT(ttc.fecha_grado, '%%Y-%%m-%%d') AS fecha_grado,
                             ttc.seccional,
-                            ttc.foto
+                            ttc.foto,
+                            ttc.hash_sha256
                     """
                 else:
                     select_fields = """
@@ -210,7 +212,8 @@ class TarjetasRepository:
                             tts.estado_solicitud,
                             tts.tipo_solicitud,
                             tts.representante_legal,
-                            tts.foto
+                            tts.foto,
+                            tts.hash_sha256
                     """
 
                 data_query = f"""
@@ -258,7 +261,10 @@ class TarjetasRepository:
                             ttc.no_tarjeta,
                             ttc.estado_contador,
                             ttc.estado AS estado_tarjeta,
-                            ttc.foto
+                            ttc.foto,
+                            ttc.hash_sha256,
+                            ttc.resolucion,
+                            DATE_FORMAT(ttc.fecha_resolucion, '%%Y-%%m-%%d') AS fecha_resolucion
                         FROM tn_tarjetavirtual_contadores ttc 
                         WHERE ttc.id = %s
                         ORDER BY ttc.id DESC
@@ -273,12 +279,14 @@ class TarjetasRepository:
                             tts.razon_social,
                             tts.resolucion,
                             DATE_FORMAT(tts.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision,
+                            DATE_FORMAT(tts.fecha_resolucion, '%%Y-%%m-%%d') AS fecha_resolucion,
                             tts.tipo_asociado,
                             tts.nit,
                             tts.estado AS estado_tarjeta,
                             tts.estado_sociedad,
                             tts.representante_legal AS representante,
-                            tts.foto  
+                            tts.foto,
+                            tts.hash_sha256
                         FROM tn_tarjetavirtual_sociedades tts
                         WHERE tts.id = %s 
                         ORDER BY tts.id DESC
@@ -887,14 +895,19 @@ class TarjetasRepository:
                         fecha_emision,
                         tipo_asociado,
                         estado,
-                        foto
+                        foto,
+                        hash_sha256
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s
+                        %s, %s
                     )
                 """
                 
+                # Calcular hash SHA-256 canónico para la credencial
+                raw_hash = f"{data.get('no_tarjeta')}|{data.get('no_documento')}|{data.get('no_expd')}|{data.get('resolucion') or ''}|{data.get('fecha_resolucion') or ''}"
+                hash_calc = hashlib.sha256(raw_hash.encode('utf-8')).hexdigest()
+
                 values = (
                     data.get("no_tarjeta"),
                     data.get("nombres"),
@@ -916,7 +929,8 @@ class TarjetasRepository:
                     data.get("fecha_emision") or datetime.now(),
                     data.get("tipo_asociado") or data.get("tipo_asociado_id") or "Contador Público",
                     data.get("estado") or data.get("estado_tarjeta") or "Emitida",
-                    data.get("foto")
+                    data.get("foto"),
+                    hash_calc
                 )
                 
                 await cursor.execute(query, values)
@@ -962,13 +976,18 @@ class TarjetasRepository:
                         tipo_asociado,
                         estado,
                         foto,
-                        representante_legal
+                        representante_legal,
+                        hash_sha256
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s
                     )
                 """
                 
+                # Calcular hash SHA-256 canónico para sociedades
+                raw_hash = f"{data.get('nit')}|{data.get('no_expd')}|{data.get('resolucion') or ''}|{data.get('fecha_resolucion') or ''}"
+                hash_calc = hashlib.sha256(raw_hash.encode('utf-8')).hexdigest()
+
                 values = (
                     data.get("no_expd") or 0,
                     data.get("razon_social") or "Sin Razón Social",
@@ -986,7 +1005,8 @@ class TarjetasRepository:
                     data.get("tipo_asociado") or data.get("tipo_asociado_id") or "Sociedad de Contadores Públicos",
                     data.get("estado") or data.get("estado_tarjeta") or "Emitida",
                     data.get("foto"),
-                    data.get("representante_legal") or data.get("representante")
+                    data.get("representante_legal") or data.get("representante"),
+                    hash_calc
                 )
                 
                 await cursor.execute(query, values)
