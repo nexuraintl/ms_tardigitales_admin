@@ -206,13 +206,16 @@ CREATE TABLE `tn_tarjetavirtual_auditoria_api` (
     `metodo` VARCHAR(15) NOT NULL,
     `tipo_asociado` VARCHAR(100) DEFAULT NULL,
     `duracion_ms` INT(11) DEFAULT NULL,
+    `codigo_http` INT(11) NOT NULL DEFAULT 200,
     `url` VARCHAR(255) NOT NULL,
     `parametros_peticion` TEXT DEFAULT NULL,
     `cuerpo_respuesta_peticion` LONGTEXT DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `idx_auditoria_fecha` (`fecha_creacion`),
-    KEY `idx_auditoria_tipo` (`tipo_tarjeta`)
+    KEY `idx_auditoria_tipo` (`tipo_tarjeta`),
+    KEY `idx_auditoria_http` (`codigo_http`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 -- =============================================================================
 -- TABLA: tn_tarjetavirtual_emision_lotes (Historial de Lotes de Emisión)
