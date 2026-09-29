@@ -243,59 +243,125 @@ class TarjetasRepository:
         finally:
             conn.close()
 
+    _SQL_SELECT_CONTADOR = """
+        SELECT ttc.id,
+            ttc.no_tarjeta,
+            CONCAT(ttc.nombres, ' ', ttc.primer_apellido, ' ', IFNULL(ttc.segundo_apellido,'')) AS solicitante,
+            CONCAT(ttc.nombres, ' ', ttc.primer_apellido, ' ', IFNULL(ttc.segundo_apellido,'')) AS nombre_completo,
+            ttc.nombres,
+            ttc.primer_apellido,
+            ttc.segundo_apellido,
+            ttc.no_expd,
+            ttc.no_expd AS expediente,
+            ttc.tipo_asociado,
+            DATE_FORMAT(ttc.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision,
+            CONCAT(IFNULL(ttc.tipo_documento,''), ' ', IFNULL(ttc.no_documento,'')) AS documento,
+            ttc.tipo_documento,
+            ttc.no_documento,
+            ttc.correo,
+            ttc.universidad,
+            ttc.estado AS estado_tarjeta,
+            ttc.estado_contador AS estado_registro,
+            ttc.estado_contador,
+            ttc.resolucion,
+            DATE_FORMAT(ttc.fecha_estado, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_estado,
+            DATE_FORMAT(ttc.fecha_resolucion, '%%Y-%%m-%%d') AS fecha_resolucion,
+            ttc.acta_jcc,
+            DATE_FORMAT(ttc.fecha_grado, '%%Y-%%m-%%d') AS fecha_grado,
+            ttc.seccional,
+            ttc.foto,
+            ttc.hash_sha256
+        FROM tn_tarjetavirtual_contadores ttc
+    """
+
+    _SQL_SELECT_SOCIEDAD = """
+        SELECT tts.id,
+            tts.no_expd,
+            tts.no_expd AS expediente,
+            tts.razon_social,
+            tts.razon_social AS solicitante,
+            tts.nit,
+            tts.nit AS documento,
+            tts.tipo_asociado,
+            DATE_FORMAT(tts.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision,
+            tts.tipo_sociedad,
+            tts.inscripcion,
+            DATE_FORMAT(tts.fecha_radicacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_radicacion,
+            tts.estado AS estado_tarjeta,
+            tts.estado_sociedad AS estado_registro,
+            tts.estado_sociedad,
+            tts.resolucion,
+            DATE_FORMAT(tts.fecha_resolucion, '%%Y-%%m-%%d') AS fecha_resolucion,
+            tts.acta_jcc,
+            tts.estado_solicitud,
+            tts.tipo_solicitud,
+            tts.representante_legal,
+            tts.representante_legal AS representante,
+            tts.foto,
+            tts.hash_sha256
+        FROM tn_tarjetavirtual_sociedades tts
+    """
+
+    async def _query_single_tarjeta(
+        self,
+        cursor,
+        field_name: str,
+        field_value: Any,
+        tipo_tarjeta: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Busca una tarjeta individual por un campo (id o hash_sha256) sin duplicar sentencias SQL."""
+        if tipo_tarjeta == "contadores":
+            await cursor.execute(
+                f"{self._SQL_SELECT_CONTADOR} WHERE ttc.{field_name} = %s ORDER BY ttc.id DESC LIMIT 1",
+                (field_value,)
+            )
+            row = await cursor.fetchone()
+            if row:
+                row["tipo_tarjeta"] = "contadores"
+            return row
+        elif tipo_tarjeta == "sociedades":
+            await cursor.execute(
+                f"{self._SQL_SELECT_SOCIEDAD} WHERE tts.{field_name} = %s ORDER BY tts.id DESC LIMIT 1",
+                (field_value,)
+            )
+            row = await cursor.fetchone()
+            if row:
+                row["tipo_tarjeta"] = "sociedades"
+            return row
+        else:
+            # Si no se especifica tipo_tarjeta, buscar primero en contadores
+            await cursor.execute(
+                f"{self._SQL_SELECT_CONTADOR} WHERE ttc.{field_name} = %s ORDER BY ttc.id DESC LIMIT 1",
+                (field_value,)
+            )
+            row = await cursor.fetchone()
+            if row:
+                row["tipo_tarjeta"] = "contadores"
+                return row
+            # Si no se encuentra en contadores, buscar en sociedades
+            await cursor.execute(
+                f"{self._SQL_SELECT_SOCIEDAD} WHERE tts.{field_name} = %s ORDER BY tts.id DESC LIMIT 1",
+                (field_value,)
+            )
+            row = await cursor.fetchone()
+            if row:
+                row["tipo_tarjeta"] = "sociedades"
+                return row
+            return None
+
     async def get_by_id(self, tarjeta_id: int, tipo_tarjeta: Optional[str] = None, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
         conn = await get_client_connection(client_id)
         try:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
-                if tipo_tarjeta == "contadores":
-                    await cursor.execute(
-                        """
-                        SELECT ttc.id,
-                            ttc.universidad,
-                            ttc.tipo_asociado,
-                            CONCAT(ttc.tipo_documento, " ", ttc.no_documento) AS documento,
-                            ttc.correo,
-                            DATE_FORMAT(ttc.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision,
-                            ttc.no_expd,
-                            CONCAT(ttc.nombres, " ",ttc.primer_apellido, " ", ttc.segundo_apellido) AS nombre_completo,
-                            ttc.no_tarjeta,
-                            ttc.estado_contador,
-                            ttc.estado AS estado_tarjeta,
-                            ttc.foto,
-                            ttc.hash_sha256,
-                            ttc.resolucion,
-                            DATE_FORMAT(ttc.fecha_resolucion, '%%Y-%%m-%%d') AS fecha_resolucion
-                        FROM tn_tarjetavirtual_contadores ttc 
-                        WHERE ttc.id = %s
-                        ORDER BY ttc.id DESC
-                        """,
-                        (tarjeta_id,)
-                    )
-                elif tipo_tarjeta == "sociedades":
-                    await cursor.execute(
-                        """
-                        SELECT tts.id,
-                            tts.no_expd,
-                            tts.razon_social,
-                            tts.resolucion,
-                            DATE_FORMAT(tts.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision,
-                            DATE_FORMAT(tts.fecha_resolucion, '%%Y-%%m-%%d') AS fecha_resolucion,
-                            tts.tipo_asociado,
-                            tts.nit,
-                            tts.estado AS estado_tarjeta,
-                            tts.estado_sociedad,
-                            tts.representante_legal AS representante,
-                            tts.foto,
-                            tts.hash_sha256
-                        FROM tn_tarjetavirtual_sociedades tts
-                        WHERE tts.id = %s 
-                        ORDER BY tts.id DESC
-                        """,
-                        (tarjeta_id,)
-                    )
-                else:
-                    return []
-                return await cursor.fetchone()
+                return await self._query_single_tarjeta(cursor, "id", tarjeta_id, tipo_tarjeta)
+        finally:
+            conn.close()
+
+    async def get_by_hash(self, hash_sha256: str, tipo_tarjeta: Optional[str] = None, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                return await self._query_single_tarjeta(cursor, "hash_sha256", hash_sha256, tipo_tarjeta)
         finally:
             conn.close()
 
