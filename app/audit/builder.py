@@ -11,6 +11,7 @@ def build_auditoria_payload(
     parametros_peticion: Dict[str, Any],
     cuerpo_respuesta: Dict[str, Any],
     duracion_ms: int,
+    codigo_http: int = 200,
 ) -> Dict[str, Any]:
     """Construye el dict listo para el repositorio."""
     return {
@@ -21,6 +22,7 @@ def build_auditoria_payload(
         "url": url,
         "fecha_creacion": datetime.now(),
         "duracion_ms": duracion_ms,
+        "codigo_http": codigo_http,
         "parametros_peticion": parametros_peticion,
         "cuerpo_respuesta_peticion": cuerpo_respuesta,
-    }
+    }

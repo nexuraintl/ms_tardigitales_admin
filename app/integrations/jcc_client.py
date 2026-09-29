@@ -5,15 +5,23 @@ import httpx
 from typing import Dict, Any, Optional
 from app.services.auditoria_service import AuditoriaService
 from app.repositories.tarjetas_repository import TarjetasRepository
+from app.constants import USE_PHP_VPN_BRIDGE, PREPROD_PHP_BRIDGE_URL, OFFICIAL_JCC_API_URL
 
 logger = logging.getLogger("jcc_client")
 
-PROD_BASE_URL = os.getenv("JCC_API_BASE_URL", "https://apitarjetas.jcc.gov.co").rstrip("/")
+if USE_PHP_VPN_BRIDGE:
+    _bridge_url = PREPROD_PHP_BRIDGE_URL.rstrip("/")
+    if not _bridge_url.endswith("/api/TarjetasDigitales"):
+        _bridge_url = f"{_bridge_url}/api/TarjetasDigitales"
+    PROD_BASE_URL = _bridge_url
+else:
+    PROD_BASE_URL = OFFICIAL_JCC_API_URL.rstrip("/")
 
 JCC_API_BEARER_TOKEN = os.getenv(
     "JCC_API_BEARER_TOKEN",
     "kvllYI0urrjVdqYOUTJZw7p5qIG9U5c8XlnNs60MMfC5yYArY3JuntakvllYI0urrjVdqYOUTJZw7p5qIG9U5c8XlnNs60MMfC5yYArY3"
 )
+
 
 
 class JccClient:
@@ -66,7 +74,8 @@ class JccClient:
         headers = {
             "Authorization": f"Bearer {JCC_API_BEARER_TOKEN}",
             "Content-Type": "application/json",
-            "Accept": "application/json"
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         }
 
         resolved_client_id = client_id or int(os.getenv("CLIENT_ID", "20001"))
@@ -94,7 +103,8 @@ class JccClient:
                     url=url,
                     parametros_peticion=payload,
                     cuerpo_respuesta=cuerpo_audit,
-                    duracion_ms=duracion_ms
+                    duracion_ms=duracion_ms,
+                    codigo_http=response.status_code
                 )
             except Exception as audit_err:
                 logger.error(f"[JccClient] Error al registrar auditoría API: {audit_err}")
@@ -188,7 +198,8 @@ class JccClient:
                     url=url,
                     parametros_peticion=payload,
                     cuerpo_respuesta={"error_conexion": str(e)},
-                    duracion_ms=duracion_ms
+                    duracion_ms=duracion_ms,
+                    codigo_http=502
                 )
             except Exception as audit_err:
                 logger.error(f"[JccClient] Error al registrar auditoría API tras fallo de red: {audit_err}")

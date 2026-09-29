@@ -1024,10 +1024,11 @@ class TarjetasRepository:
                         fecha_creacion,
                         tipo_asociado,
                         duracion_ms,
+                        codigo_http,
                         parametros_peticion,
                         cuerpo_respuesta_peticion
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                 """
                 
@@ -1039,6 +1040,7 @@ class TarjetasRepository:
                     data.get("fecha_creacion") or datetime.now(),
                     data.get("tipo_asociado") or data.get("tipo_asociado_id"),
                     data.get("duracion_ms"),
+                    data.get("codigo_http") or 200,
                     json.dumps(data.get("parametros_peticion")) if data.get("parametros_peticion") else None,
                     json.dumps(data.get("cuerpo_respuesta_peticion")) if data.get("cuerpo_respuesta_peticion") else None
                 )
@@ -1149,6 +1151,7 @@ class TarjetasRepository:
                         tapi.metodo,
                         tapi.tipo_asociado AS tipo,
                         tapi.duracion_ms,
+                        tapi.codigo_http,
                         tapi.url,
                         tapi.parametros_peticion,
                         tapi.cuerpo_respuesta_peticion

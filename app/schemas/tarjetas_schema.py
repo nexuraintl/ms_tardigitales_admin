@@ -74,7 +74,9 @@ class AuditoriaApiCreateSchema(BaseModel):
     fecha_creacion: Optional[datetime] = Field(None, description="Fecha y hora de la petición")
     tipo_asociado_id: Optional[int] = Field(None, description="ID del tipo de operación")
     duracion_ms: Optional[int] = Field(None, description="Duración de la petición en milisegundos")
+    codigo_http: Optional[int] = Field(200, description="Código de respuesta HTTP (200, 400, 500, etc.)")
     parametros_peticion: Optional[Dict[str, Any]] = Field(None, description="Parámetros JSON enviados en la petición")
+
     cuerpo_respuesta_peticion: Optional[Dict[str, Any]] = Field(None, description="Cuerpo JSON de la respuesta del servidor")
 
 class ContadorCreateSchema(BaseModel):
