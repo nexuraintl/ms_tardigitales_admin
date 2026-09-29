@@ -1,3 +1,42 @@
+-- =====================================================================
+-- Script de Limpieza: Tarjetas, Lotes de Emisión, Historial y Auditoría
+-- Base de datos: producto9_base
+-- =====================================================================
+-- NOTA: Este script preserva intactas las tablas de configuración:
+-- - tn_tarjetavirtual_configuracion_branding
+-- - tn_tarjetavirtual_config_columnas_filtro_tarjetas
+-- - tn_tarjetavirtual_config_validador
+-- =====================================================================
+
+SET FOREIGN_KEY_CHECKS = 0;
+
+-- 1. Limpieza de tarjetas e historial de cambios de estado
+TRUNCATE TABLE tn_tarjetavirtual_estados_historial;
+TRUNCATE TABLE tn_tarjetavirtual_contadores;
+TRUNCATE TABLE tn_tarjetavirtual_sociedades;
+
+-- 2. Limpieza de lotes de emisión masiva y sus ítems de cola
+TRUNCATE TABLE tn_tarjetavirtual_emision_lote_items;
+TRUNCATE TABLE tn_tarjetavirtual_emision_lotes;
+
+-- 3. Limpieza de registros de auditoría de consumo de API JCC
+TRUNCATE TABLE tn_tarjetavirtual_auditoria_api;
+
+SET FOREIGN_KEY_CHECKS = 1;
+
+-- Verificación de registros restantes (debe dar 0 en todas)
+SELECT 'tn_tarjetavirtual_contadores' AS tabla, COUNT(*) AS total FROM tn_tarjetavirtual_contadores
+UNION ALL
+SELECT 'tn_tarjetavirtual_sociedades', COUNT(*) FROM tn_tarjetavirtual_sociedades
+UNION ALL
+SELECT 'tn_tarjetavirtual_estados_historial', COUNT(*) FROM tn_tarjetavirtual_estados_historial
+UNION ALL
+SELECT 'tn_tarjetavirtual_emision_lote_items', COUNT(*) FROM tn_tarjetavirtual_emision_lote_items
+UNION ALL
+SELECT 'tn_tarjetavirtual_emision_lotes', COUNT(*) FROM tn_tarjetavirtual_emision_lotes
+UNION ALL
+SELECT 'tn_tarjetavirtual_auditoria_api', COUNT(*) FROM tn_tarjetavirtual_auditoria_api;
+
 -- =============================================================================
 -- ESQUEMA OFICIAL DE BASE DE DATOS: MICROSERVICIO TARJETAS DIGITALES ADMIN
 -- Módulo: Tarjetas Digitales y Notificaciones (tn_tarjetavirtual_*)
@@ -33,6 +72,7 @@ CREATE TABLE `tn_tarjetavirtual_contadores` (
     `tipo_asociado` VARCHAR(100) DEFAULT 'Contador Público',
     `estado` VARCHAR(50) DEFAULT 'Vigente',
     `foto` LONGTEXT DEFAULT NULL,
+    `hash_sha256` VARCHAR(64) DEFAULT NULL,
     `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP(),
     `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
     PRIMARY KEY (`id`),
@@ -40,7 +80,8 @@ CREATE TABLE `tn_tarjetavirtual_contadores` (
     UNIQUE KEY `uk_contadores_no_documento` (`no_documento`),
     KEY `idx_contadores_no_expd` (`no_expd`),
     KEY `idx_contadores_estado` (`estado`),
-    KEY `idx_contadores_estado_contador` (`estado_contador`)
+    KEY `idx_contadores_estado_contador` (`estado_contador`),
+    KEY `idx_contadores_hash` (`hash_sha256`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
@@ -66,13 +107,15 @@ CREATE TABLE `tn_tarjetavirtual_sociedades` (
     `estado` VARCHAR(50) DEFAULT 'Vigente',
     `representante_legal` VARCHAR(255) DEFAULT NULL,
     `foto` LONGTEXT DEFAULT NULL,
+    `hash_sha256` VARCHAR(64) DEFAULT NULL,
     `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP(),
     `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
     PRIMARY KEY (`id`),
     KEY `idx_sociedades_no_expd` (`no_expd`),
     KEY `idx_sociedades_nit` (`nit`),
     KEY `idx_sociedades_estado` (`estado`),
-    KEY `idx_sociedades_estado_sociedad` (`estado_sociedad`)
+    KEY `idx_sociedades_estado_sociedad` (`estado_sociedad`),
+    KEY `idx_sociedades_hash` (`hash_sha256`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
