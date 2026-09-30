@@ -20,7 +20,6 @@ def build_auditoria_payload(
         "tipo_asociado": tipo,
         "metodo": metodo,
         "url": url,
-        "fecha_creacion": datetime.now(),
         "duracion_ms": duracion_ms,
         "codigo_http": codigo_http,
         "parametros_peticion": parametros_peticion,

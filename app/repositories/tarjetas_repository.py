@@ -1122,7 +1122,7 @@ class TarjetasRepository:
                         parametros_peticion,
                         cuerpo_respuesta_peticion
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, NOW(), %s, %s, %s, %s, %s
                     )
                 """
                 
@@ -1131,7 +1131,6 @@ class TarjetasRepository:
                     data.get("tipo_tarjeta") or data.get("tipo_id"),
                     data.get("metodo"),
                     data.get("url"),
-                    data.get("fecha_creacion") or datetime.now(),
                     data.get("tipo_asociado") or data.get("tipo_asociado_id"),
                     data.get("duracion_ms"),
                     data.get("codigo_http") or 200,
