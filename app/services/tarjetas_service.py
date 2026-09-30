@@ -408,7 +408,16 @@ class TarjetasService:
 
     async def save_validador_config(self, data: ValidadorConfigSchema, client_id: Optional[int] = None) -> Dict[str, Any]:
         try:
-            await self.repository.save_validador_config(data.dict(), client_id)
+            config_dict = data.dict()
+            if not any(bool(v) for v in config_dict.values()):
+                raise PipelineException(
+                    etapa="CONFIGURACION_VALIDADOR",
+                    mensaje="Debe seleccionar al menos un campo visible para guardar la configuración del validador público.",
+                    cliente_id=client_id,
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+
+            await self.repository.save_validador_config(config_dict, client_id)
             return {
                 "status": "success",
                 "message": "Configuración del validador guardada exitosamente."
