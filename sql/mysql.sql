@@ -347,7 +347,33 @@ CREATE TABLE `tn_tarjetavirtual_sincronizacion_logs` (
     `creado_en` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP(),
     PRIMARY KEY (`id`),
     KEY `idx_sincro_fecha_inicio` (`fecha_inicio`),
-    KEY `idx_sincro_estado` (`estado`)
+-- =============================================================================
+-- TABLA: tn_tarjetavirtual_notificaciones (Historial y Gestión de Notificaciones)
+-- =============================================================================
+DROP TABLE IF EXISTS `tn_tarjetavirtual_notificaciones`;
+CREATE TABLE `tn_tarjetavirtual_notificaciones` (
+    `id` INT(11) NOT NULL AUTO_INCREMENT,
+    `client_id` INT(11) NOT NULL,
+    `titulo` VARCHAR(255) NOT NULL,
+    `mensaje` TEXT NOT NULL,
+    `tipo` VARCHAR(50) DEFAULT 'Informativa',
+    `canal` VARCHAR(100) NOT NULL,
+    `audiencia` VARCHAR(100) NOT NULL,
+    `destinatarios` INT(11) NOT NULL DEFAULT 0,
+    `fecha` VARCHAR(50) DEFAULT NULL,
+    `estado` VARCHAR(50) NOT NULL DEFAULT 'Programada',
+    `creado_por` VARCHAR(100) DEFAULT 'Administrador',
+    `hora_inicio` VARCHAR(10) DEFAULT '07:00',
+    `hora_fin` VARCHAR(10) DEFAULT '17:00',
+    `max_diario` INT(11) DEFAULT 2,
+    `recurrencia` VARCHAR(50) DEFAULT 'No repetir',
+    `respetar_rango` TINYINT(1) DEFAULT 1,
+    `fecha_creacion` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `fecha_actualizacion` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_notif_client` (`client_id`),
+    KEY `idx_notif_estado` (`estado`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
+
