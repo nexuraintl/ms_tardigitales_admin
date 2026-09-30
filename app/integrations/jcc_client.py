@@ -42,12 +42,18 @@ class JccClient:
         """
         Limpia el documento según el tipo de tarjeta.
         - Contadores: Solo alfanuméricos (quita guiones, puntos, espacios).
-        - Sociedades: Mantiene el guion (-) y alfanuméricos (quita puntos, espacios).
+        - Sociedades: Extrae únicamente la raíz del NIT antes del guion (-),
+          ya que la API de la JCC rechaza el dígito de verificación en la consulta individual.
         """
+        if not documento:
+            return ""
+        doc_str = str(documento).strip()
         if tipo_tarjeta == "sociedades":
-            return "".join(c for c in str(documento).strip() if c.isalnum() or c == "-")
+            if "-" in doc_str:
+                doc_str = doc_str.split("-")[0].strip()
+            return "".join(c for c in doc_str if c.isalnum())
         else:
-            return "".join(c for c in str(documento).strip() if c.isalnum())
+            return "".join(c for c in doc_str if c.isalnum())
 
     async def consultar_registro(
         self,

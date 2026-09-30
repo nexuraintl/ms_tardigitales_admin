@@ -136,7 +136,9 @@ class EmisionEngineService:
         """
         Emisión atómica y unificada de tarjeta de Sociedad (HU-JCC-005, HU-JCC-006, HU-JCC-007).
         """
-        nit_limpio = "".join(c for c in str(nit).strip() if c.isalnum())
+        raw_nit = str(nit).strip()
+        nit_base = raw_nit.split("-")[0].strip() if "-" in raw_nit else raw_nit
+        nit_limpio = "".join(c for c in nit_base if c.isalnum())
         if not nit_limpio:
             return {
                 "resultado": "error",
@@ -147,12 +149,12 @@ class EmisionEngineService:
         cid = client_id
 
         # 1. Control estricto de duplicados en BD
-        existe = await self.repository.exists_society(nit_limpio, cid)
+        existe = await self.repository.exists_society(raw_nit, cid)
         if existe:
             return {
                 "resultado": "omitido_duplicado",
-                "nit": nit_limpio,
-                "mensaje": f"La sociedad con NIT {nit_limpio} ya cuenta con tarjeta registrada en el sistema."
+                "nit": raw_nit,
+                "mensaje": f"La sociedad con NIT {raw_nit} ya cuenta con tarjeta registrada en el sistema."
             }
 
         # 2. Obtener datos de la JCC (precargados o consulta vía JccClient con auditoría automática)
@@ -201,7 +203,7 @@ class EmisionEngineService:
         sociedad_data = {
             "no_expd": item.get("no_expd", 0),
             "razon_social": item.get("razon_social", ""),
-            "nit": item.get("nit", nit_limpio),
+            "nit": item.get("nit") or raw_nit,
             "tipo_sociedad": item.get("tipo_sociedad", "SOCIEDAD DE CONTADORES"),
             "inscripcion": item.get("inscripcion"),
             "fecha_radicacion": item.get("fecha_radicacion"),
@@ -224,15 +226,15 @@ class EmisionEngineService:
             return {
                 "resultado": "emitido_exitosamente",
                 "id": new_id,
-                "nit": nit_limpio,
+                "nit": item.get("nit") or raw_nit,
                 "estado_inicial": EstadoTarjetaEnum.EMITIDA.value,
                 "mensaje": "Tarjeta digital de sociedad emitida exitosamente."
             }
         except Exception as e:
-            logger.error(f"[EmisionEngine] Error al insertar sociedad {nit_limpio}: {e}")
+            logger.error(f"[EmisionEngine] Error al insertar sociedad {raw_nit}: {e}")
             return {
                 "resultado": "error",
-                "nit": nit_limpio,
+                "nit": raw_nit,
                 "mensaje": f"Error en base de datos al guardar sociedad: {str(e)}"
             }
 
