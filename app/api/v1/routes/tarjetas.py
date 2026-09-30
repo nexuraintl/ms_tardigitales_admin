@@ -292,13 +292,14 @@ async def emision_masiva(
     from app.config.queue_config import queue_config
 
     # 2. Despacho: si el QueueWorker continuo está activo, el lote queda encolado para el Worker
+    reg_label = f"{len(docs)} registro" if len(docs) == 1 else f"{len(docs)} registros"
     if queue_config.WORKER_ENABLED:
         return {
             "status": "accepted",
             "asincrono": True,
             "lote_id": lote_id,
             "total": len(docs),
-            "mensaje": f"Lote #{lote_id} con {len(docs)} registros encolado exitosamente. El Worker continuo lo procesará en segundo plano.",
+            "mensaje": f"Archivo con {reg_label} recibido correctamente. La información será procesada en segundo plano.",
             "configuracion": queue_config.to_dict()
         }
     elif payload.asincrono or len(docs) > 10:
@@ -316,7 +317,7 @@ async def emision_masiva(
             "asincrono": True,
             "lote_id": lote_id,
             "total": len(docs),
-            "mensaje": f"Lote #{lote_id} con {len(docs)} registros encolado en memoria (BackgroundTasks)."
+            "mensaje": f"Archivo con {reg_label} recibido correctamente. La información será procesada en segundo plano."
         }
     else:
         # Procesamiento síncrono inmediato (solo para pruebas pequeñas cuando el worker está apagado)
