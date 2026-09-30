@@ -111,7 +111,7 @@ CREATE TABLE `tn_tarjetavirtual_sociedades` (
     `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP(),
     `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
     PRIMARY KEY (`id`),
-    KEY `idx_sociedades_no_expd` (`no_expd`),
+    UNIQUE KEY `uk_sociedades_no_expd` (`no_expd`),
     KEY `idx_sociedades_nit` (`nit`),
     KEY `idx_sociedades_estado` (`estado`),
     KEY `idx_sociedades_estado_sociedad` (`estado_sociedad`),

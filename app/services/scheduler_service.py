@@ -96,8 +96,14 @@ class SchedulerService:
                     if not disponibles or not consulta.get("encontrado"):
                         continue
 
-                    docs = [str(item.get("no_documento", "")).strip() for item in disponibles if item.get("no_documento")]
+                    docs_todos = [str(item.get("no_documento", "")).strip() for item in disponibles if item.get("no_documento")]
+                    if not docs_todos:
+                        continue
+
+                    # Filtrar contadores que ya cuentan con tarjeta emitida en el sistema
+                    docs = await self.repository.filter_unregistered_accountants(docs_todos, cid)
                     if not docs:
+                        logger.info(f"[SchedulerService] Contadores ({tipo}): Los {len(docs_todos)} registros reportados por JCC ya cuentan con tarjeta emitida. Omitiendo creación de lote.")
                         continue
 
                     if queue_config.SCHEDULER_AUTO_ENQUEUE:
@@ -118,7 +124,7 @@ class SchedulerService:
                             "total_encolados": len(docs),
                             "estado": "EN_COLA"
                         })
-                        logger.info(f"[SchedulerService] Lote #{lote_id} con {len(docs)} contadores ({tipo}) encolado para el Worker.")
+                        logger.info(f"[SchedulerService] Lote #{lote_id} con {len(docs)} contadores ({tipo}) nuevos encolado para el Worker.")
                     else:
                         precargados = {str(item.get("no_documento", "")).strip(): item for item in disponibles if item.get("no_documento")}
                         sub_resumen = await self.engine.procesar_lote_emision(
@@ -175,7 +181,13 @@ class SchedulerService:
                     if not disponibles or not consulta.get("encontrado"):
                         continue
 
-                    nits = [str(item.get("nit", "")).strip() for item in disponibles if item.get("nit")]
+                    # Filtrar sociedades que ya cuentan con tarjeta en el sistema (por raíz de NIT, DV o expediente)
+                    pendientes = await self.repository.filter_unregistered_societies(disponibles, cid)
+                    if not pendientes:
+                        logger.info(f"[SchedulerService] Sociedades ({tipo}): Los {len(disponibles)} registros reportados por JCC ya cuentan con tarjeta emitida. Omitiendo creación de lote.")
+                        continue
+
+                    nits = [str(item.get("nit") or item.get("NIT", "")).strip() for item in pendientes if (item.get("nit") or item.get("NIT"))]
                     if not nits:
                         continue
 
@@ -197,9 +209,9 @@ class SchedulerService:
                             "total_encolados": len(nits),
                             "estado": "EN_COLA"
                         })
-                        logger.info(f"[SchedulerService] Lote #{lote_id} con {len(nits)} sociedades ({tipo}) encolado para el Worker.")
+                        logger.info(f"[SchedulerService] Lote #{lote_id} con {len(nits)} sociedades ({tipo}) nuevas encolado para el Worker.")
                     else:
-                        precargados = {str(item.get("nit", "")).strip(): item for item in disponibles if item.get("nit")}
+                        precargados = {str(item.get("nit") or item.get("NIT", "")).strip(): item for item in pendientes if (item.get("nit") or item.get("NIT"))}
                         sub_resumen = await self.engine.procesar_lote_emision(
                             identificaciones=nits,
                             tipo_tarjeta="sociedades",
