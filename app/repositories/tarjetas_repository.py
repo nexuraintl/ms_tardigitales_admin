@@ -973,7 +973,7 @@ class TarjetasRepository:
                         hash_sha256
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, NOW(), %s, %s,
                         %s, %s
                     )
                 """
@@ -1000,7 +1000,6 @@ class TarjetasRepository:
                     data.get("fecha_grado"),
                     data.get("seccional"),
                     data.get("correo"),
-                    data.get("fecha_emision") or datetime.now(),
                     data.get("tipo_asociado") or data.get("tipo_asociado_id") or "Contador Público",
                     data.get("estado") or data.get("estado_tarjeta") or "Emitida",
                     data.get("foto"),
@@ -1054,7 +1053,7 @@ class TarjetasRepository:
                         hash_sha256
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, NOW(), %s, %s, %s, %s, %s
                     )
                 """
                 
@@ -1075,7 +1074,6 @@ class TarjetasRepository:
                     str(data.get("acta_jcc")) if data.get("acta_jcc") is not None else None,
                     data.get("estado_solicitud"),
                     data.get("tipo_solicitud"),
-                    data.get("fecha_emision") or datetime.now(),
                     data.get("tipo_asociado") or data.get("tipo_asociado_id") or "Sociedad de Contadores Públicos",
                     data.get("estado") or data.get("estado_tarjeta") or "Emitida",
                     data.get("foto"),
