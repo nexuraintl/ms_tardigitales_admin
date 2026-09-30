@@ -896,6 +896,12 @@ class TarjetasRepository:
         nit: str,
         client_id: Optional[int] = None,
     ) -> bool:
+        if not nit:
+            return False
+        raw_nit = str(nit).strip()
+        nit_base = raw_nit.split("-")[0].strip() if "-" in raw_nit else raw_nit
+        nit_digits = "".join(c for c in nit_base if c.isalnum())
+
         conn = await get_client_connection(client_id)
         try:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -904,9 +910,11 @@ class TarjetasRepository:
                     SELECT 1
                     FROM tn_tarjetavirtual_sociedades
                     WHERE nit = %s
+                       OR REPLACE(SUBSTRING_INDEX(nit, '-', 1), ' ', '') = %s
+                       OR REPLACE(nit, '-', '') = %s
                     LIMIT 1
                     """,
-                    (nit,),
+                    (raw_nit, nit_digits, nit_digits),
                 )
                 result = await cursor.fetchone()
                 return result is not None
