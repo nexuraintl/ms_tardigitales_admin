@@ -3,8 +3,36 @@ import json
 import math
 import hashlib
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from app.core.database import get_client_connection
+
+def extraer_partes_nit(nit: Any) -> Tuple[str, str, str]:
+    """
+    Descompone cualquier representación de NIT en:
+    1. raw_nit: cadena original limpia (ej: '900.540.865-5' o '9005408655')
+    2. nit_raiz: dígitos base de la persona jurídica (ej: '900540865')
+    3. nit_full_digits: todos los dígitos concatenados (ej: '9005408655')
+    """
+    if not nit:
+        return ("", "", "")
+    raw = str(nit).strip()
+    if "-" in raw:
+        partes = raw.split("-")
+        raiz_str = partes[0]
+        dv_str = partes[1] if len(partes) > 1 else ""
+        raiz = "".join(c for c in raiz_str if c.isdigit())
+        dv = "".join(c for c in dv_str if c.isdigit())
+        full_digits = f"{raiz}{dv}"
+    else:
+        all_digits = "".join(c for c in raw if c.isdigit())
+        if len(all_digits) == 10:
+            raiz = all_digits[:9]
+            full_digits = all_digits
+        else:
+            raiz = all_digits
+            full_digits = all_digits
+    return (raw, raiz, full_digits)
+
 
 class TarjetasRepository:
 
@@ -895,12 +923,13 @@ class TarjetasRepository:
         self,
         nit: str,
         client_id: Optional[int] = None,
+        no_expd: Optional[int] = None,
     ) -> bool:
-        if not nit:
+        if not nit and not no_expd:
             return False
-        raw_nit = str(nit).strip()
-        nit_base = raw_nit.split("-")[0].strip() if "-" in raw_nit else raw_nit
-        nit_digits = "".join(c for c in nit_base if c.isalnum())
+
+        raw_nit, nit_raiz, nit_full_digits = extraer_partes_nit(nit)
+        expd_int = int(no_expd) if (no_expd and str(no_expd).isdigit() and int(no_expd) > 0) else 0
 
         conn = await get_client_connection(client_id)
         try:
@@ -909,17 +938,110 @@ class TarjetasRepository:
                     """
                     SELECT 1
                     FROM tn_tarjetavirtual_sociedades
-                    WHERE nit = %s
-                       OR REPLACE(SUBSTRING_INDEX(nit, '-', 1), ' ', '') = %s
-                       OR REPLACE(nit, '-', '') = %s
+                    WHERE (
+                        nit = %s
+                        OR (%s != '' AND REPLACE(REPLACE(REPLACE(nit, '-', ''), '.', ''), ' ', '') = %s)
+                        OR (%s != '' AND REPLACE(REPLACE(SUBSTRING_INDEX(nit, '-', 1), '.', ''), ' ', '') = %s)
+                        OR (%s != '' AND LEFT(REPLACE(REPLACE(REPLACE(nit, '-', ''), '.', ''), ' ', ''), 9) = %s)
+                        OR (%s > 0 AND no_expd = %s)
+                    )
                     LIMIT 1
                     """,
-                    (raw_nit, nit_digits, nit_digits),
+                    (
+                        raw_nit,
+                        nit_full_digits, nit_full_digits,
+                        nit_raiz, nit_raiz,
+                        nit_raiz, nit_raiz,
+                        expd_int, expd_int
+                    ),
                 )
                 result = await cursor.fetchone()
                 return result is not None
         finally:
             conn.close()
+
+    async def filter_unregistered_accountants(
+        self,
+        documentos: List[str],
+        client_id: Optional[int] = None
+    ) -> List[str]:
+        """
+        Filtra y devuelve únicamente los documentos de contadores que NO existen en la base de datos.
+        """
+        if not documentos:
+            return []
+        clean_docs = [str(d).strip() for d in documentos if str(d).strip()]
+        if not clean_docs:
+            return []
+        
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                format_strings = ','.join(['%s'] * len(clean_docs))
+                await cursor.execute(
+                    f"SELECT no_documento FROM tn_tarjetavirtual_contadores WHERE no_documento IN ({format_strings})",
+                    tuple(clean_docs)
+                )
+                rows = await cursor.fetchall()
+                existentes = {str(r["no_documento"]).strip() for r in rows if r.get("no_documento")}
+                return [d for d in clean_docs if d not in existentes]
+        finally:
+            conn.close()
+
+    async def filter_unregistered_societies(
+        self,
+        disponibles: List[Dict[str, Any]],
+        client_id: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Filtra y devuelve únicamente las sociedades de JCC que NO cuentan con tarjeta previa en el sistema,
+        evaluando coincidencia por raíz de NIT, formato completo o número de expediente.
+        """
+        if not disponibles:
+            return []
+        
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute("SELECT nit, no_expd FROM tn_tarjetavirtual_sociedades")
+                rows = await cursor.fetchall()
+                
+                existing_nits_raw = set()
+                existing_roots = set()
+                existing_full_digits = set()
+                existing_expds = set()
+
+                for r in rows:
+                    n_val = r.get("nit")
+                    if n_val:
+                        raw_n, raiz_n, full_n = extraer_partes_nit(n_val)
+                        if raw_n: existing_nits_raw.add(raw_n)
+                        if raiz_n: existing_roots.add(raiz_n)
+                        if full_n: existing_full_digits.add(full_n)
+                    e_val = r.get("no_expd")
+                    if e_val and int(e_val) > 0:
+                        existing_expds.add(int(e_val))
+
+                no_registrados = []
+                for item in disponibles:
+                    n_item = item.get("nit") or item.get("NIT")
+                    e_item = item.get("no_expd") or item.get("NO_EXPD")
+                    
+                    e_int = int(e_item) if (e_item and str(e_item).isdigit() and int(e_item) > 0) else None
+                    if e_int and e_int in existing_expds:
+                        continue
+
+                    if n_item:
+                        raw_i, raiz_i, full_i = extraer_partes_nit(n_item)
+                        if raw_i in existing_nits_raw or (raiz_i and raiz_i in existing_roots) or (full_i and full_i in existing_full_digits):
+                            continue
+
+                    no_registrados.append(item)
+
+                return no_registrados
+        finally:
+            conn.close()
+
 
     async def exists_accountant(
             self,
