@@ -4,7 +4,7 @@ from fastapi import FastAPI, APIRouter, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
-from app.api.v1.routes import tarjetas, colas
+from app.api.v1.routes import tarjetas, colas, notificaciones
 
 from app.core.exceptions import PipelineException
 
@@ -88,6 +88,7 @@ admin_router = APIRouter(prefix="/tardigitales/admin")
 
 admin_router.include_router(tarjetas.router, prefix="/tarjetas", tags=["Admin - Tarjetas Digitales"])
 admin_router.include_router(colas.router, tags=["Admin - Colas y Procesos"])
+admin_router.include_router(notificaciones.router, prefix="/notificaciones", tags=["Admin - Notificaciones"])
 
 app.include_router(admin_router)
 
