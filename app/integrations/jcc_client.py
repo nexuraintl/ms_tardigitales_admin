@@ -51,7 +51,10 @@ class JccClient:
         if tipo_tarjeta == "sociedades":
             if "-" in doc_str:
                 doc_str = doc_str.split("-")[0].strip()
-            return "".join(c for c in doc_str if c.isalnum())
+            clean_digits = "".join(c for c in doc_str if c.isalnum())
+            if len(clean_digits) == 10 and clean_digits.isdigit():
+                clean_digits = clean_digits[:9]
+            return clean_digits
         else:
             return "".join(c for c in doc_str if c.isalnum())
 
