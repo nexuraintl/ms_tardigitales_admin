@@ -147,8 +147,9 @@ class EmisionEngineService:
 
         cid = client_id
 
-        # 1. Control estricto de duplicados en BD
-        existe = await self.repository.exists_society(raw_nit, cid)
+        # 1. Control estricto de duplicados en BD (Nivel 1 con NIT y expediente si está precargado)
+        expd_precargado = (item_precargado.get("no_expd") or item_precargado.get("NO_EXPD")) if item_precargado else None
+        existe = await self.repository.exists_society(raw_nit, cid, no_expd=expd_precargado)
         if existe:
             return {
                 "resultado": "omitido_duplicado",
@@ -198,11 +199,22 @@ class EmisionEngineService:
             except Exception as e:
                 logger.warning(f"[EmisionEngine] No fue posible obtener foto complementaria para sociedad {nit_limpio}: {e}")
 
+        # Control estricto de duplicados en BD (Nivel 2 con NIT canónico y expediente confirmados por JCC)
+        confirmed_nit = item.get("nit") or item.get("NIT") or raw_nit
+        confirmed_expd = item.get("no_expd") or item.get("NO_EXPD")
+        existe_confirmado = await self.repository.exists_society(confirmed_nit, cid, no_expd=confirmed_expd)
+        if existe_confirmado:
+            return {
+                "resultado": "omitido_duplicado",
+                "nit": confirmed_nit,
+                "mensaje": f"La sociedad con NIT {confirmed_nit} (Exp. {confirmed_expd}) ya cuenta con tarjeta registrada en el sistema."
+            }
+
         # 4. Construcción y persistencia con estado inicial 'Emitida'
         sociedad_data = {
             "no_expd": item.get("no_expd", 0),
             "razon_social": item.get("razon_social", ""),
-            "nit": item.get("nit") or raw_nit,
+            "nit": confirmed_nit,
             "tipo_sociedad": item.get("tipo_sociedad", "SOCIEDAD DE CONTADORES"),
             "inscripcion": item.get("inscripcion"),
             "fecha_radicacion": item.get("fecha_radicacion"),

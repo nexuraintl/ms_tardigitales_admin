@@ -308,8 +308,10 @@ class TarjetasService:
         estado_tarjeta = EstadoTarjetaEnum.EMITIDA.value
         nit = item.get("nit") or documento
 
+        expd = item.get("no_expd") or item.get("NO_EXPD")
+
         try:
-            existe_sociedad = await self.repository.exists_society(nit, client_id)
+            existe_sociedad = await self.repository.exists_society(nit, client_id, no_expd=expd)
         except PipelineException:
             raise
         except Exception as e:
