@@ -248,7 +248,6 @@ class TarjetasService:
                 "fecha_grado": item.get("fecha_grado"),
                 "seccional": item.get("seccional", ""),
                 "correo": item.get("correo", ""),
-                "fecha_emision": datetime.now(),
                 "tipo_asociado": tipo_asociado_key,
                 "estado": estado_tarjeta,
                 "foto": item.get("pdf")
@@ -349,7 +348,6 @@ class TarjetasService:
                 "tipo_solicitud": item.get("tipo_solicitud"),
                 "correo": item.get("correo", ""),
                 "representante_legal": item.get("representante_legal", ""),
-                "fecha_emision": datetime.now(),
                 "tipo_asociado": tipo_asociado_key,
                 "estado": estado_tarjeta,
                 "foto": item.get("pdf")
