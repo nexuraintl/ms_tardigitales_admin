@@ -2,8 +2,10 @@ import os
 import time
 import logging
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from app.integrations.jcc_client import JccClient
+
+COLOMBIA_TZ = timezone(timedelta(hours=-5))
 from app.repositories.tarjetas_repository import TarjetasRepository
 from app.services.emision_engine_service import EmisionEngineService
 
@@ -223,7 +225,7 @@ class SchedulerService:
                         "error": err_str
                     })
 
-            self.ultima_ejecucion = datetime.now().isoformat()
+            self.ultima_ejecucion = datetime.now(COLOMBIA_TZ).isoformat()
             total_enc = resumen["procesados_contadores"] + resumen["procesados_sociedades"]
             errores_detalle_list = resumen.get("errores_detalle", [])
             
@@ -294,8 +296,7 @@ class SchedulerService:
             }
 
             from app.config.queue_config import queue_config
-            from datetime import timedelta
-            self.proxima_ejecucion = (datetime.now() + timedelta(seconds=queue_config.SCHEDULER_INTERVAL_SECONDS)).isoformat()
+            self.proxima_ejecucion = (datetime.now(COLOMBIA_TZ) + timedelta(seconds=queue_config.SCHEDULER_INTERVAL_SECONDS)).isoformat()
 
             logger.info(f"[SchedulerService] Ciclo recurrente finalizado. Estado: {estado}, Total encolados: {total_enc}, Duración: {duracion_ms}ms")
             return resumen

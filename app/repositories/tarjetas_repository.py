@@ -1722,19 +1722,25 @@ class TarjetasRepository:
         cid = client_id or int(os.getenv("CLIENT_ID", "20001"))
         conn = await get_client_connection(cid)
         try:
+            duracion_ms = int(data.get("duracion_ms", 0))
+            duracion_segundos = max(0, int(duracion_ms / 1000))
             async with conn.cursor() as cursor:
                 query = """
                     INSERT INTO tn_tarjetavirtual_sincronizacion_logs (
                         origen, fecha_inicio, fecha_fin, duracion_ms,
                         estado, total_encolados, contadores_encolados, sociedades_encoladas,
                         errores_count, detalle
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (
+                        %s,
+                        DATE_SUB(NOW(), INTERVAL %s SECOND),
+                        NOW(),
+                        %s, %s, %s, %s, %s, %s, %s
+                    )
                 """
                 values = (
                     data.get("origen", "PROGRAMADO"),
-                    data.get("fecha_inicio") or datetime.now(),
-                    data.get("fecha_fin") or datetime.now(),
-                    int(data.get("duracion_ms", 0)),
+                    duracion_segundos,
+                    duracion_ms,
                     data.get("estado", "EXITOSO"),
                     int(data.get("total_encolados", 0)),
                     int(data.get("contadores_encolados", 0)),
