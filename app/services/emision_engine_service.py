@@ -103,7 +103,6 @@ class EmisionEngineService:
             "fecha_grado": item.get("fecha_grado"),
             "seccional": item.get("seccional", ""),
             "correo": item.get("correo", ""),
-            "fecha_emision": datetime.now(),
             "tipo_asociado": tipo_tramite,
             "estado": EstadoTarjetaEnum.EMITIDA.value,
             "foto": foto_b64
@@ -215,7 +214,6 @@ class EmisionEngineService:
             "tipo_solicitud": item.get("tipo_solicitud"),
             "correo": item.get("correo", ""),
             "representante_legal": item.get("representante_legal", ""),
-            "fecha_emision": datetime.now(),
             "tipo_asociado": tipo_tramite,
             "estado": EstadoTarjetaEnum.EMITIDA.value,
             "foto": foto_b64
