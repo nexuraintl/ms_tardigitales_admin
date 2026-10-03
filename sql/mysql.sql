@@ -224,7 +224,6 @@ CREATE TABLE `tn_tarjetavirtual_configuracion_branding` (
     `patron` LONGTEXT DEFAULT NULL,
     `color_fondo` VARCHAR(20) NOT NULL DEFAULT '#14275f',
     `color_letra` VARCHAR(20) NOT NULL DEFAULT '#ffffff',
-    `fuente_letra` VARCHAR(100) NOT NULL DEFAULT 'Arial, sans-serif',
     `usuario_creacion_id` INT(11) DEFAULT NULL,
     `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP(),
     `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
@@ -233,9 +232,9 @@ CREATE TABLE `tn_tarjetavirtual_configuracion_branding` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Plantillas base por defecto
-INSERT INTO `tn_tarjetavirtual_configuracion_branding` (`tipo_id`, `version`, `publicado`, `color_fondo`, `color_letra`, `fuente_letra`) VALUES
-(1, 1, 1, '#14275f', '#ffffff', 'Arial, sans-serif'),
-(2, 1, 1, '#134567', '#ffffff', 'Arial, sans-serif');
+INSERT INTO `tn_tarjetavirtual_configuracion_branding` (`tipo_id`, `version`, `publicado`, `color_fondo`, `color_letra`) VALUES
+(1, 1, 1, '#14275f', '#ffffff'),
+(2, 1, 1, '#134567', '#ffffff');
 
 -- =============================================================================
 -- TABLA: tn_tarjetavirtual_auditoria_api (Auditoría de Consultas y Validaciones)
