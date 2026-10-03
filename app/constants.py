@@ -26,7 +26,7 @@ DEFAULT_CLIENT_ID: int = 20001
 # de la JCC, mientras que el servidor PHP (nx9) sí cuenta con conexión activa.
 # Se habilita el puente hacia el endpoint PHP sin requerir variables en .env.
 # =============================================================================
-USE_PHP_VPN_BRIDGE: bool = False
+USE_PHP_VPN_BRIDGE: bool = True
 
 # URL Local de desarrollo (utilizada en pruebas locales con Docker Gateway / Nginx):
 # PREPROD_PHP_BRIDGE_URL: str = "http://host.docker.internal/api/TarjetasDigitales"
