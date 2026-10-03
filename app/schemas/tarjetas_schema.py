@@ -55,7 +55,6 @@ class BrandingCredentialsCreateSchema(BaseModel):
     patron: Optional[str] = None
     color_fondo: str = Field(..., description="Color de fondo es requerido")
     color_letra: str = Field(..., description="Color de letra es requerido")
-    fuente_letra: str = Field(..., description="Fuente es requerida")
     usuario_creacion_id: int = Field(..., description="ID del usuario creador")
     tipo_id: int = Field(..., description="ID del tipo es requerido")
 
@@ -64,7 +63,6 @@ class BrandingCredentialsUpdateSchema(BaseModel):
     logo: Optional[str] = None
     color_fondo: Optional[str] = None
     color_letra: Optional[str] = None
-    fuente_letra: Optional[str] = None
 
 class AuditoriaApiCreateSchema(BaseModel):
     client_id: int = Field(..., description="ID del cliente asociado a la operación")

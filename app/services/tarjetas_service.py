@@ -470,7 +470,6 @@ class TarjetasService:
                 "patron": patron_val,
                 "color_fondo": data.color_fondo,
                 "color_letra": data.color_letra,
-                "fuente_letra": data.fuente_letra,
                 "usuario_creacion_id": data.usuario_creacion_id,
                 "tipo_id": data.tipo_id,
             }

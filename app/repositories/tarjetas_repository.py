@@ -665,7 +665,7 @@ class TarjetasRepository:
                         id, tipo_id, version, publicado,
                         version AS version_actual,
                         CASE WHEN publicado = 1 THEN version ELSE NULL END AS version_publicada,
-                        logo, patron, color_fondo, color_letra, fuente_letra,
+                        logo, patron, color_fondo, color_letra,
                         usuario_creacion_id,
                         DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_branding
@@ -708,8 +708,8 @@ class TarjetasRepository:
                 """
                 INSERT INTO tn_tarjetavirtual_configuracion_branding (
                     tipo_id, version, publicado, logo, patron, color_fondo,
-                    color_letra, fuente_letra, usuario_creacion_id
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    color_letra, usuario_creacion_id
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     tipo_id,
@@ -719,7 +719,6 @@ class TarjetasRepository:
                     branding_credencials_data.get("patron"),
                     branding_credencials_data.get("color_fondo"),
                     branding_credencials_data.get("color_letra"),
-                    branding_credencials_data.get("fuente_letra"),
                     branding_credencials_data.get("usuario_creacion_id")
                 )
             )
@@ -749,7 +748,7 @@ class TarjetasRepository:
                         id, tipo_id, version, publicado,
                         version AS version_actual,
                         CASE WHEN publicado = 1 THEN version ELSE NULL END AS version_publicada,
-                        logo, patron, color_fondo, color_letra, fuente_letra,
+                        logo, patron, color_fondo, color_letra,
                         usuario_creacion_id,
                         DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_branding
@@ -773,7 +772,7 @@ class TarjetasRepository:
                     SELECT
                         id, tipo_id, version, publicado,
                         version AS version_publicada,
-                        logo, patron, color_fondo, color_letra, fuente_letra,
+                        logo, patron, color_fondo, color_letra,
                         usuario_creacion_id,
                         DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_branding
@@ -791,7 +790,7 @@ class TarjetasRepository:
                         SELECT
                             id, tipo_id, version, publicado,
                             version AS version_publicada,
-                            logo, patron, color_fondo, color_letra, fuente_letra,
+                            logo, patron, color_fondo, color_letra,
                             usuario_creacion_id,
                             DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                         FROM tn_tarjetavirtual_configuracion_branding
@@ -898,7 +897,6 @@ class TarjetasRepository:
                         patron,
                         color_fondo,
                         color_letra,
-                        fuente_letra,
                         DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_branding
                     WHERE tipo_id = %s OR id = %s
