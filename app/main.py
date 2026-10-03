@@ -97,12 +97,6 @@ app.include_router(admin_router)
 # -------------------------------------------------------------
 async def _iniciar_queue_worker():
     from app.services.queue_worker_service import queue_worker
-    from app.config.queue_config import queue_config
-
-    if not queue_config.WORKER_ENABLED:
-        print("[QueueWorker] Worker de colas deshabilitado por configuración (QUEUE_WORKER_ENABLED=false).")
-        return
-
     await queue_worker.iniciar_worker()
 
 # HU-JCC-005: Tarea programada recurrente (Background Task Loop)

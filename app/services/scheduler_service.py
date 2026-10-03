@@ -106,39 +106,80 @@ class SchedulerService:
                         logger.info(f"[SchedulerService] Contadores ({tipo}): Los {len(docs_todos)} registros reportados por JCC ya cuentan con tarjeta emitida. Omitiendo creación de lote.")
                         continue
 
-                    if queue_config.SCHEDULER_AUTO_ENQUEUE:
+                    # Mapeo de datos completos recibidos en la llamada masiva
+                    precargados_map = {str(item.get("no_documento", "")).strip(): item for item in disponibles if item.get("no_documento")}
+
+                    # -------------------------------------------------------------
+                    # FASE 1: Ingesta Inmediata Garantizada (Fast-Path Persistence)
+                    # Persiste las tarjetas inmediatamente en BD con estado Emitida
+                    # y los datos oficiales de la JCC (resolución, actas, seccional, etc.)
+                    # -------------------------------------------------------------
+                    from app.schemas.tarjetas_schema import EstadoTarjetaEnum
+                    docs_creados = []
+                    for doc in docs:
+                        item_data = precargados_map.get(doc, {})
+                        contador_data = {
+                            "no_tarjeta": item_data.get("no_tarjeta", ""),
+                            "nombres": item_data.get("nombres", ""),
+                            "primer_apellido": item_data.get("primer_apellido", ""),
+                            "segundo_apellido": item_data.get("segundo_apellido", ""),
+                            "no_expd": item_data.get("no_expd", 0),
+                            "tipo_documento": item_data.get("tipo_documento", "CC"),
+                            "no_documento": doc,
+                            "universidad": item_data.get("universidad", ""),
+                            "estado_contador": item_data.get("estado_contador", "ACTIVO"),
+                            "resolucion": item_data.get("resolucion", ""),
+                            "fecha_estado": item_data.get("fecha_estado"),
+                            "fecha_radicacion": item_data.get("fecha_radicacion"),
+                            "fecha_resolucion": item_data.get("fecha_resolucion"),
+                            "acta_jcc": item_data.get("acta_jcc"),
+                            "fecha_grado": item_data.get("fecha_grado"),
+                            "seccional": item_data.get("seccional", ""),
+                            "correo": item_data.get("correo", ""),
+                            "tipo_asociado": tipo,
+                            "estado": EstadoTarjetaEnum.EMITIDA.value,
+                            "foto": item_data.get("foto") or item_data.get("pdf") or None
+                        }
+                        try:
+                            await self.repository.create_contadores(contador_data, cid)
+                            docs_creados.append(doc)
+                        except Exception as create_err:
+                            logger.error(f"[SchedulerService] Error persistiendo contador {doc}: {create_err}")
+                            resumen["errores"] += 1
+                            resumen["errores_detalle"].append(f"Contador {doc}: {str(create_err)}")
+
+                    resumen["procesados_contadores"] += len(docs_creados)
+                    resumen["creados"] += len(docs_creados)
+
+                    # -------------------------------------------------------------
+                    # FASE 2: Encolar la hidratación asíncrona de fotos en segundo plano
+                    # -------------------------------------------------------------
+                    if docs_creados and queue_config.SCHEDULER_AUTO_ENQUEUE:
                         lote_id = await self.repository.create_emision_lote(
                             client_id=cid,
                             tipo_tarjeta="contadores",
                             tipo_tramite=tipo,
-                            total_registros=len(docs),
-                            archivo_nombre=f"SCHEDULER_CONTADORES_{tipo.upper()}",
+                            total_registros=len(docs_creados),
+                            archivo_nombre=f"SCHEDULER_FOTOS_CONTADORES_{tipo.upper()}",
                             creado_por="Sistema Programado"
                         )
-                        await self.repository.insert_emision_lote_items(lote_id=lote_id, documentos=docs, client_id=cid)
-                        resumen["procesados_contadores"] += len(docs)
+                        await self.repository.insert_emision_lote_items(lote_id=lote_id, documentos=docs_creados, client_id=cid)
                         resumen["detalles"].append({
                             "tipo": tipo,
                             "tipo_tarjeta": "contadores",
                             "lote_id": lote_id,
-                            "total_encolados": len(docs),
-                            "estado": "EN_COLA"
+                            "total_creados": len(docs_creados),
+                            "total_encolados_fotos": len(docs_creados),
+                            "estado": "EMITIDAS_FOTOS_EN_COLA"
                         })
-                        logger.info(f"[SchedulerService] Lote #{lote_id} con {len(docs)} contadores ({tipo}) nuevos encolado para el Worker.")
-                    else:
-                        precargados = {str(item.get("no_documento", "")).strip(): item for item in disponibles if item.get("no_documento")}
-                        sub_resumen = await self.engine.procesar_lote_emision(
-                            identificaciones=docs,
-                            tipo_tarjeta="contadores",
-                            tipo_tramite=tipo,
-                            client_id=cid,
-                            items_precargados_map=precargados
-                        )
-                        resumen["procesados_contadores"] += sub_resumen["procesados"]
-                        resumen["creados"] += sub_resumen["creados"]
-                        resumen["omitidos_duplicados"] += sub_resumen["omitidos_duplicados"]
-                        resumen["errores"] += (sub_resumen["no_aptos"] + sub_resumen["errores"])
-                        resumen["detalles"].append(sub_resumen)
+                        logger.info(f"[SchedulerService] {len(docs_creados)} contadores ({tipo}) persistidos inmediatamente en BD. Lote #{lote_id} encolado para hidratación de fotos.")
+                    elif docs_creados:
+                        resumen["detalles"].append({
+                            "tipo": tipo,
+                            "tipo_tarjeta": "contadores",
+                            "total_creados": len(docs_creados),
+                            "estado": "EMITIDAS_SIN_COLA"
+                        })
 
                 except Exception as e:
                     err_str = str(e)
@@ -187,43 +228,77 @@ class SchedulerService:
                         logger.info(f"[SchedulerService] Sociedades ({tipo}): Los {len(disponibles)} registros reportados por JCC ya cuentan con tarjeta emitida. Omitiendo creación de lote.")
                         continue
 
-                    nits = [str(item.get("nit") or item.get("NIT", "")).strip() for item in pendientes if (item.get("nit") or item.get("NIT"))]
-                    if not nits:
-                        continue
+                    # -------------------------------------------------------------
+                    # FASE 1: Ingesta Inmediata Garantizada para Sociedades
+                    # (No requieren fotos individuales, se emiten al 100% de manera atómica)
+                    # -------------------------------------------------------------
+                    from app.schemas.tarjetas_schema import EstadoTarjetaEnum
+                    sociedades_creadas = []
+                    for item in pendientes:
+                        nit_raw = str(item.get("nit") or item.get("NIT", "")).strip()
+                        if not nit_raw:
+                            continue
+                        sociedad_data = {
+                            "no_expd": item.get("no_expd") or item.get("NO_EXPD") or 0,
+                            "razon_social": item.get("razon_social") or item.get("RAZON_SOCIAL") or "Sin Razón Social",
+                            "nit": nit_raw,
+                            "tipo_sociedad": item.get("tipo_sociedad") or item.get("TIPO_SOCIEDAD") or "SOCIEDAD DE CONTADORES",
+                            "inscripcion": item.get("inscripcion") or item.get("INSCRIPCION"),
+                            "fecha_radicacion": item.get("fecha_radicacion") or item.get("FECHA_RADICACION"),
+                            "estado_sociedad": item.get("estado_sociedad") or item.get("ESTADO_SOCIEDAD") or "ACTIVO",
+                            "resolucion": item.get("resolucion") or item.get("RESOLUCION"),
+                            "fecha_resolucion": item.get("fecha_resolucion") or item.get("FECH_RESOLU") or item.get("FECHA_RESOLUCION"),
+                            "acta_jcc": item.get("acta_jcc") or item.get("ACTA_JCC"),
+                            "estado_solicitud": item.get("estado_solicitud") or item.get("ESTADO_SOLICITUD"),
+                            "tipo_solicitud": item.get("tipo_solicitud") or item.get("TIPO_SOLICITUD"),
+                            "tipo_asociado": tipo,
+                            "estado": EstadoTarjetaEnum.EMITIDA.value,
+                            "foto": item.get("foto") or item.get("pdf") or None,
+                            "representante_legal": item.get("representante_legal") or item.get("REPRESENTANTE_LEGAL") or ""
+                        }
+                        try:
+                            await self.repository.create_sociedades(sociedad_data, cid)
+                            sociedades_creadas.append(nit_raw)
+                        except Exception as create_soc_err:
+                            logger.error(f"[SchedulerService] Error persistiendo sociedad {nit_raw}: {create_soc_err}")
+                            resumen["errores"] += 1
+                            resumen["errores_detalle"].append(f"Sociedad {nit_raw}: {str(create_soc_err)}")
 
-                    if queue_config.SCHEDULER_AUTO_ENQUEUE:
-                        lote_id = await self.repository.create_emision_lote(
-                            client_id=cid,
-                            tipo_tarjeta="sociedades",
-                            tipo_tramite=tipo,
-                            total_registros=len(nits),
-                            archivo_nombre=f"SCHEDULER_SOCIEDADES_{tipo.upper()}",
-                            creado_por="Sistema Programado"
-                        )
-                        await self.repository.insert_emision_lote_items(lote_id=lote_id, documentos=nits, client_id=cid)
-                        resumen["procesados_sociedades"] += len(nits)
+                    resumen["procesados_sociedades"] += len(sociedades_creadas)
+                    resumen["creados"] += len(sociedades_creadas)
+
+                    # Registrar cabecera de lote finalizado en BD para trazabilidad en auditoría
+                    if sociedades_creadas:
+                        try:
+                            lote_id = await self.repository.create_emision_lote(
+                                client_id=cid,
+                                tipo_tarjeta="sociedades",
+                                tipo_tramite=tipo,
+                                total_registros=len(sociedades_creadas),
+                                archivo_nombre=f"SCHEDULER_SOCIEDADES_{tipo.upper()}",
+                                creado_por="Sistema Programado"
+                            )
+                            await self.repository.update_emision_lote_progress(
+                                lote_id=lote_id,
+                                procesados=len(sociedades_creadas),
+                                exitosos=len(sociedades_creadas),
+                                duplicados=0,
+                                fallidos=0,
+                                estado="FINALIZADO",
+                                mensaje=f"{len(sociedades_creadas)}/{len(sociedades_creadas)} emitidas exitosamente en sincronización masiva.",
+                                finalizado=True,
+                                client_id=cid
+                            )
+                        except Exception as lote_soc_err:
+                            logger.warning(f"[SchedulerService] No se pudo asentar cabecera de lote para sociedades: {lote_soc_err}")
+
                         resumen["detalles"].append({
                             "tipo": tipo,
                             "tipo_tarjeta": "sociedades",
-                            "lote_id": lote_id,
-                            "total_encolados": len(nits),
-                            "estado": "EN_COLA"
+                            "total_creadas": len(sociedades_creadas),
+                            "estado": "EMITIDAS_EXITOSAMENTE"
                         })
-                        logger.info(f"[SchedulerService] Lote #{lote_id} con {len(nits)} sociedades ({tipo}) nuevas encolado para el Worker.")
-                    else:
-                        precargados = {str(item.get("nit") or item.get("NIT", "")).strip(): item for item in pendientes if (item.get("nit") or item.get("NIT"))}
-                        sub_resumen = await self.engine.procesar_lote_emision(
-                            identificaciones=nits,
-                            tipo_tarjeta="sociedades",
-                            tipo_tramite=tipo,
-                            client_id=cid,
-                            items_precargados_map=precargados
-                        )
-                        resumen["procesados_sociedades"] += sub_resumen["procesados"]
-                        resumen["creados"] += sub_resumen["creados"]
-                        resumen["omitidos_duplicados"] += sub_resumen["omitidos_duplicados"]
-                        resumen["errores"] += (sub_resumen["no_aptos"] + sub_resumen["errores"])
-                        resumen["detalles"].append(sub_resumen)
+                        logger.info(f"[SchedulerService] {len(sociedades_creadas)} sociedades ({tipo}) persistidas y emitidas inmediatamente en BD.")
 
                 except Exception as e:
                     err_str = str(e)

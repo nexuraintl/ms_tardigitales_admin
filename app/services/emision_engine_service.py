@@ -125,6 +125,83 @@ class EmisionEngineService:
                 "mensaje": f"Error en base de datos al guardar contador: {str(e)}"
             }
 
+    async def sincronizar_foto_contador(
+        self,
+        documento: str,
+        tipo_tramite: str = "primeraVez",
+        client_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        HU-JCC-005 / HU-JCC-006: Hidratación asíncrona de fotografía para tarjetas ya persistidas.
+        Si la tarjeta aún no existe en el sistema (ej. lote manual CSV con solo identificaciones),
+        delega en emitir_contador_individual para realizar la creación completa.
+        """
+        doc_limpio = "".join(c for c in str(documento).strip() if c.isalnum())
+        if not doc_limpio:
+            return {
+                "resultado": "error",
+                "documento": documento,
+                "mensaje": "Número de identificación vacío o inválido."
+            }
+
+        cid = client_id
+
+        # 1. Verificar si la tarjeta ya existe en BD
+        tarjeta = await self.repository.get_contador_by_documento(doc_limpio, cid)
+        if not tarjeta:
+            # Flujo alternativo: No existe en BD (ej. carga manual de lote CSV con solo identificaciones)
+            return await self.emitir_contador_individual(
+                documento=doc_limpio,
+                tipo_tramite=tipo_tramite,
+                client_id=cid
+            )
+
+        # 2. Si ya tiene foto en BD, no gastar llamadas a la API externa
+        foto_actual = tarjeta.get("foto")
+        if foto_actual and len(str(foto_actual).strip()) > 50:
+            return {
+                "resultado": "foto_ya_presente",
+                "id": tarjeta["id"],
+                "documento": doc_limpio,
+                "mensaje": "La tarjeta ya cuenta con fotografía cargada en el sistema."
+            }
+
+        # 3. Consultar a la JCC para obtener la foto en Base64
+        consulta = await self.jcc_client.consultar_registro(
+            documento=doc_limpio,
+            tipo_tarjeta="contadores",
+            tipo=tipo_tramite,
+            client_id=cid
+        )
+
+        if consulta and consulta.get("es_error_conexion"):
+            return {
+                "resultado": "error_conexion",
+                "id": tarjeta["id"],
+                "documento": doc_limpio,
+                "mensaje": consulta.get("error") or "Fallo de conexión externa al consultar fotografía en la JCC."
+            }
+
+        foto_b64 = None
+        if consulta and consulta.get("data"):
+            foto_b64 = consulta["data"].get("pdf") or consulta["data"].get("foto")
+
+        if foto_b64 and len(str(foto_b64).strip()) > 50:
+            await self.repository.update_foto_contador(doc_limpio, foto_b64, cid)
+            return {
+                "resultado": "emitido_exitosamente",
+                "id": tarjeta["id"],
+                "documento": doc_limpio,
+                "mensaje": "Fotografía sincronizada y actualizada exitosamente en la tarjeta."
+            }
+        else:
+            return {
+                "resultado": "sin_foto_en_origen",
+                "id": tarjeta["id"],
+                "documento": doc_limpio,
+                "mensaje": "La JCC respondió pero no reporta fotografía para este registro."
+            }
+
     async def emitir_sociedad_individual(
         self,
         nit: str,
