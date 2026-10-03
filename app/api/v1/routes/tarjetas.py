@@ -144,7 +144,6 @@ async def create_branding_credentials(
     patron: Optional[UploadFile] = File(None),
     color_fondo: str = Form(...),
     color_letra: str = Form(...),
-    fuente_letra: str = Form(...),
     usuario_creacion_id: int = Form(...),
     tipo_id: int = Form(...),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
@@ -160,7 +159,6 @@ async def create_branding_credentials(
         patron=patron_base64,
         color_fondo=color_fondo,
         color_letra=color_letra,
-        fuente_letra=fuente_letra,
         usuario_creacion_id=usuario_creacion_id,
         tipo_id=tipo_id,
     )
