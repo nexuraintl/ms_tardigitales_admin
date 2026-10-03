@@ -1063,6 +1063,53 @@ class TarjetasRepository:
             finally:
                 conn.close()
 
+    async def get_contador_by_documento(
+        self,
+        no_documento: str,
+        client_id: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Obtiene un contador por su número de documento con todos sus campos y foto.
+        """
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    f"{self._SQL_SELECT_CONTADOR} WHERE ttc.no_documento = %s ORDER BY ttc.id DESC LIMIT 1",
+                    (str(no_documento).strip(),)
+                )
+                row = await cursor.fetchone()
+                if row:
+                    row["tipo_tarjeta"] = "contadores"
+                return row
+        finally:
+            conn.close()
+
+    async def update_foto_contador(
+        self,
+        no_documento: str,
+        foto: str,
+        client_id: Optional[int] = None
+    ) -> bool:
+        """
+        Actualiza asíncronamente la fotografía en Base64 de un contador ya emitido.
+        """
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    UPDATE tn_tarjetavirtual_contadores
+                    SET foto = %s
+                    WHERE no_documento = %s
+                    """,
+                    (foto, str(no_documento).strip())
+                )
+                await conn.commit()
+                return cursor.rowcount > 0
+        finally:
+            conn.close()
+
     async def create_contadores(self, data: Dict[str, Any], client_id: Optional[int] = None) -> int:
         conn = await get_client_connection(client_id)
         try:
@@ -1615,7 +1662,7 @@ class TarjetasRepository:
                     """,
                     (resultado, tarjeta_id, mensaje_detalle, item_id)
                 )
-                col_inc = "exitosos = exitosos + 1" if resultado == "emitido_exitosamente" else (
+                col_inc = "exitosos = exitosos + 1" if resultado in ("emitido_exitosamente", "foto_ya_presente", "sin_foto_en_origen") else (
                     "duplicados = duplicados + 1" if resultado == "omitido_duplicado" else "fallidos = fallidos + 1"
                 )
                 await cursor.execute(
