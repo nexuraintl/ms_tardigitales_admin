@@ -97,7 +97,7 @@ class QueueWorkerService:
                             client_id=cid
                         )
                     else:
-                        res = await self.engine.emitir_contador_individual(
+                        res = await self.engine.sincronizar_foto_contador(
                             documento=doc,
                             tipo_tramite=tipo_tramite,
                             client_id=cid
