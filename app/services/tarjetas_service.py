@@ -14,7 +14,9 @@ from app.schemas.tarjetas_schema import (
     SociedadCreateSchema,
     ConsultaMatriculaResponseSchema,
     EstadoTarjetaEnum,
-    EstadoRegistroEnum
+    EstadoRegistroEnum,
+    InstitucionalConfigCreateSchema,
+    InstitucionalConfigUpdateSchema
 )
 from app.integrations.jcc_client import JccClient
 from app.services.auditoria_service import AuditoriaService
@@ -462,6 +464,8 @@ class TarjetasService:
 
             logo_val = data.logo or (existing.get("logo") if existing else None)
             patron_val = data.patron or (existing.get("patron") if existing else None)
+            nombre_director_val = data.nombre_director if data.nombre_director is not None else (existing.get("nombre_director") if existing else None)
+            firma_director_val = data.firma_director if data.firma_director is not None else (existing.get("firma_director") if existing else None)
 
             branding_data = {
                 "version_actual": data.version_actual,
@@ -470,6 +474,8 @@ class TarjetasService:
                 "patron": patron_val,
                 "color_fondo": data.color_fondo,
                 "color_letra": data.color_letra,
+                "nombre_director": nombre_director_val,
+                "firma_director": firma_director_val,
                 "usuario_creacion_id": data.usuario_creacion_id,
                 "tipo_id": data.tipo_id,
             }
@@ -535,6 +541,17 @@ class TarjetasService:
                     cliente_id=client_id,
                     status_code=status.HTTP_404_NOT_FOUND
                 )
+
+            # Inyectar la configuración institucional vigente (Nombre, Cargo y Firma del Director General)
+            try:
+                institucional = await self.repository.get_institucional_published(client_id)
+                if institucional:
+                    result["nombre_director"] = institucional.get("nombre_director") or result.get("nombre_director") or "SANDRA MILENA BARRIOS PULIDO"
+                    result["cargo_director"] = institucional.get("cargo_director") or "DIRECTOR GENERAL"
+                    result["firma_director"] = institucional.get("firma_director") or result.get("firma_director")
+            except Exception as e_inst:
+                print(f"[TarjetasService] Advertencia al combinar datos institucionales en get_branding_credentials: {e_inst}")
+
             return result
         except PipelineException:
             raise
@@ -558,6 +575,17 @@ class TarjetasService:
                     cliente_id=client_id,
                     status_code=status.HTTP_404_NOT_FOUND
                 )
+
+            # Inyectar la configuración institucional vigente (Nombre, Cargo y Firma del Director General)
+            try:
+                institucional = await self.repository.get_institucional_published(client_id)
+                if institucional:
+                    result["nombre_director"] = institucional.get("nombre_director") or result.get("nombre_director") or "SANDRA MILENA BARRIOS PULIDO"
+                    result["cargo_director"] = institucional.get("cargo_director") or "DIRECTOR GENERAL"
+                    result["firma_director"] = institucional.get("firma_director") or result.get("firma_director")
+            except Exception as e_inst:
+                print(f"[TarjetasService] Advertencia al combinar datos institucionales en get_branding_credentials_publish: {e_inst}")
+
             return result
         except PipelineException:
             raise
@@ -592,6 +620,192 @@ class TarjetasService:
             raise PipelineException(
                 etapa="BRANDING_CREDENTIALS",
                 mensaje="No fue posible obtener el historial de versiones del branding.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    async def get_branding_public(self, tipo: str, client_id: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Retorna la configuración de branding activa y publicada para la aplicación móvil o clientes externos,
+        incluyendo logos, patrones, colores institucionales, nombre del director y firma institucional.
+        """
+        tipo_str = str(tipo).strip().lower()
+        if tipo_str in ["1", "contador", "contadores"]:
+            tipo_id = 1
+            tipo_nombre = "contadores"
+        elif tipo_str in ["2", "sociedad", "sociedades"]:
+            tipo_id = 2
+            tipo_nombre = "sociedades"
+        else:
+            tipo_id = 1
+            tipo_nombre = "contadores"
+
+        try:
+            result = await self.repository.get_branding_credentials_publish(tipo_id, client_id)
+            if not result:
+                result = await self.repository.get_by_id_branding_credencials(tipo_id, client_id)
+
+            if not result:
+                result = {
+                    "tipo_id": tipo_id,
+                    "version": 1,
+                    "publicado": 1,
+                    "color_fondo": "#14275f" if tipo_id == 1 else "#134567",
+                    "color_letra": "#ffffff",
+                    "nombre_director": "SANDRA MILENA BARRIOS PULIDO",
+                    "cargo_director": "DIRECTOR GENERAL",
+                    "firma_director": None,
+                    "logo": None,
+                    "patron": None
+                }
+
+            # Consultar configuración institucional vigente (Firma y Nombre del Director)
+            institucional = None
+            try:
+                institucional = await self.repository.get_institucional_published(client_id)
+            except Exception as e_inst:
+                print(f"[TarjetasService] Advertencia: No se pudo obtener config institucional: {e_inst}")
+
+            nombre_director = (
+                (institucional.get("nombre_director") if institucional else None)
+                or result.get("nombre_director")
+                or "SANDRA MILENA BARRIOS PULIDO"
+            )
+            cargo_director = (
+                (institucional.get("cargo_director") if institucional else None)
+                or "DIRECTOR GENERAL"
+            )
+            firma_director = (
+                (institucional.get("firma_director") if institucional else None)
+                or result.get("firma_director")
+            )
+
+            return {
+                "status": "success",
+                "data": {
+                    "tipo_id": tipo_id,
+                    "tipo_tarjeta": tipo_nombre,
+                    "version": result.get("version") or result.get("version_publicada") or 1,
+                    "publicado": bool(result.get("publicado", 1)),
+                    "color_fondo": result.get("color_fondo"),
+                    "color_letra": result.get("color_letra"),
+                    "color_letra_impresion": result.get("color_letra_impresion") or "#0f172a",
+                    "nombre_director": nombre_director,
+                    "cargo_director": cargo_director,
+                    "firma_director": firma_director,
+                    "logo": result.get("logo"),
+                    "patron": result.get("patron"),
+                    "logo_impresion": result.get("logo_impresion"),
+                    "patron_impresion": result.get("patron_impresion"),
+                    "created_at": result.get("created_at_formatted")
+                }
+            }
+        except Exception as e:
+            print(f"[TarjetasService] Error al obtener branding público {tipo}: {e}")
+            raise PipelineException(
+                etapa="BRANDING_CREDENTIALS",
+                mensaje="No fue posible obtener la información de branding solicitada.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    # =========================================================================
+    # BRANDING INSTITUCIONAL (GLOBAL)
+    # =========================================================================
+    async def get_institucional_published(self, client_id: Optional[int] = None) -> Dict[str, Any]:
+        try:
+            result = await self.repository.get_institucional_published(client_id)
+            if not result:
+                result = {
+                    "id": 1,
+                    "nombre_director": "SANDRA MILENA BARRIOS PULIDO",
+                    "cargo_director": "DIRECTOR GENERAL",
+                    "firma_director": None,
+                    "version": 1,
+                    "publicado": 1,
+                    "created_at_formatted": None
+                }
+            return {
+                "status": "success",
+                "data": result
+            }
+        except Exception as e:
+            print(f"[TarjetasService] Error al consultar configuración institucional: {e}")
+            raise PipelineException(
+                etapa="BRANDING_INSTITUCIONAL",
+                mensaje="No fue posible obtener la información institucional publicada.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    async def create_institucional_version(
+        self,
+        data: InstitucionalConfigCreateSchema,
+        client_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        try:
+            payload = data.dict()
+            new_id = await self.repository.create_institucional_version(payload, client_id)
+            return {
+                "status": "success",
+                "message": "Nueva versión institucional guardada exitosamente.",
+                "id": new_id
+            }
+        except Exception as e:
+            print(f"[TarjetasService] Error al crear versión institucional: {e}")
+            raise PipelineException(
+                etapa="BRANDING_INSTITUCIONAL",
+                mensaje="No fue posible guardar la nueva versión institucional.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    async def list_institucional_history(
+        self,
+        client_id: Optional[int] = None,
+        page: int = 1,
+        page_size: int = 10
+    ) -> Dict[str, Any]:
+        try:
+            result = await self.repository.list_institucional_history(
+                client_id=client_id,
+                page=page,
+                page_size=page_size
+            )
+            return {
+                "status": "success",
+                **result
+            }
+        except Exception as e:
+            print(f"[TarjetasService] Error al listar historial institucional: {e}")
+            raise PipelineException(
+                etapa="BRANDING_INSTITUCIONAL",
+                mensaje="No fue posible obtener el historial de versiones institucionales.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    async def publish_institucional_version(
+        self,
+        version_id: int,
+        client_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        try:
+            await self.repository.publish_institucional_version(version_id, client_id)
+            return {
+                "status": "success",
+                "message": f"Versión institucional {version_id} publicada exitosamente."
+            }
+        except Exception as e:
+            print(f"[TarjetasService] Error al publicar versión institucional: {e}")
+            raise PipelineException(
+                etapa="BRANDING_INSTITUCIONAL",
+                mensaje="No fue posible publicar la versión institucional solicitada.",
                 detalle_tecnico=str(e),
                 cliente_id=client_id,
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
