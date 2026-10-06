@@ -224,6 +224,8 @@ CREATE TABLE `tn_tarjetavirtual_configuracion_branding` (
     `patron` LONGTEXT DEFAULT NULL,
     `color_fondo` VARCHAR(20) NOT NULL DEFAULT '#14275f',
     `color_letra` VARCHAR(20) NOT NULL DEFAULT '#ffffff',
+    `nombre_director` VARCHAR(255) DEFAULT NULL,
+    `firma_director` LONGTEXT DEFAULT NULL,
     `usuario_creacion_id` INT(11) DEFAULT NULL,
     `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP(),
     `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
@@ -235,6 +237,26 @@ CREATE TABLE `tn_tarjetavirtual_configuracion_branding` (
 INSERT INTO `tn_tarjetavirtual_configuracion_branding` (`tipo_id`, `version`, `publicado`, `color_fondo`, `color_letra`) VALUES
 (1, 1, 1, '#14275f', '#ffffff'),
 (2, 1, 1, '#134567', '#ffffff');
+
+-- =============================================================================
+-- TABLA: tn_tarjetavirtual_configuracion_institucional (Firma y Dirección Institucional)
+-- =============================================================================
+DROP TABLE IF EXISTS `tn_tarjetavirtual_configuracion_institucional`;
+CREATE TABLE `tn_tarjetavirtual_configuracion_institucional` (
+    `id` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+    `nombre_director` VARCHAR(255) NOT NULL,
+    `cargo_director` VARCHAR(100) NOT NULL DEFAULT 'DIRECTOR GENERAL',
+    `firma_director` LONGTEXT DEFAULT NULL,
+    `version` INT(10) UNSIGNED NOT NULL DEFAULT 1,
+    `publicado` TINYINT(1) NOT NULL DEFAULT 1,
+    `usuario_creacion_id` INT(11) DEFAULT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP(),
+    `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP(),
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `tn_tarjetavirtual_configuracion_institucional` (`nombre_director`, `cargo_director`, `firma_director`, `version`, `publicado`) VALUES
+('SANDRA MILENA BARRIOS PULIDO', 'DIRECTOR GENERAL', NULL, 1, 1);
 
 -- =============================================================================
 -- TABLA: tn_tarjetavirtual_auditoria_api (Auditoría de Consultas y Validaciones)
@@ -345,7 +367,9 @@ CREATE TABLE `tn_tarjetavirtual_sincronizacion_logs` (
     `detalle` VARCHAR(500) DEFAULT NULL,
     `creado_en` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP(),
     PRIMARY KEY (`id`),
-    KEY `idx_sincro_fecha_inicio` (`fecha_inicio`),
+    KEY `idx_sincro_fecha_inicio` (`fecha_inicio`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- =============================================================================
 -- TABLA: tn_tarjetavirtual_notificaciones (Historial y Gestión de Notificaciones)
 -- =============================================================================
@@ -374,5 +398,49 @@ CREATE TABLE `tn_tarjetavirtual_notificaciones` (
     KEY `idx_notif_estado` (`estado`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- =============================================================================
+-- TABLA: tn_tarjetavirtual_configuracion_institucional (Branding Institucional Global)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS `tn_tarjetavirtual_configuracion_institucional` (
+    `id` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+    `nombre_director` VARCHAR(255) NOT NULL,
+    `cargo_director` VARCHAR(100) NOT NULL DEFAULT 'DIRECTOR GENERAL',
+    `firma_director` LONGTEXT DEFAULT NULL,
+    `version` INT(10) UNSIGNED NOT NULL DEFAULT 1,
+    `publicado` TINYINT(1) NOT NULL DEFAULT 1,
+    `usuario_creacion_id` INT(11) DEFAULT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_inst_publicado` (`publicado`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `tn_tarjetavirtual_configuracion_institucional` (`id`, `nombre_director`, `cargo_director`, `version`, `publicado`)
+VALUES (1, 'SANDRA MILENA BARRIOS PULIDO', 'DIRECTOR GENERAL', 1, 1)
+-- =============================================================================
+-- TABLA: tn_tarjetavirtual_configuracion_branding (Branding Visual Contadores/Sociedades)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS `tn_tarjetavirtual_configuracion_branding` (
+  `id` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `tipo_id` INT(11) NOT NULL COMMENT '1: Contadores, 2: Sociedades',
+  `version` INT(10) UNSIGNED NOT NULL DEFAULT 1,
+  `publicado` TINYINT(1) NOT NULL DEFAULT 0,
+  `logo` LONGTEXT DEFAULT NULL,
+  `patron` LONGTEXT DEFAULT NULL,
+  `logo_impresion` LONGTEXT DEFAULT NULL,
+  `patron_impresion` LONGTEXT DEFAULT NULL,
+  `color_fondo` VARCHAR(20) NOT NULL DEFAULT '#14275f',
+  `color_letra` VARCHAR(20) NOT NULL DEFAULT '#ffffff',
+  `color_letra_impresion` VARCHAR(20) NOT NULL DEFAULT '#0f172a',
+  `nombre_director` VARCHAR(255) DEFAULT NULL,
+  `firma_director` LONGTEXT DEFAULT NULL,
+  `usuario_creacion_id` INT(11) DEFAULT NULL,
+  `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_branding_tipo_version` (`tipo_id`,`version`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
+
 
