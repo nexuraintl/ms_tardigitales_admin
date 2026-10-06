@@ -8,7 +8,8 @@ from app.schemas.tarjetas_schema import (
     BrandingCredentialsCreateSchema,
     BrandingCredentialsUpdateSchema,
     ConsultaTarjetaSchema,
-    EmisionMasivaRequestSchema
+    EmisionMasivaRequestSchema,
+    InstitucionalConfigCreateSchema
 )
 
 router = APIRouter()
@@ -142,14 +143,23 @@ async def create_branding_credentials(
     version_publicada: Optional[int] = Form(None),
     logo: Optional[UploadFile] = File(None),
     patron: Optional[UploadFile] = File(None),
+    logo_impresion: Optional[UploadFile] = File(None),
+    patron_impresion: Optional[UploadFile] = File(None),
+    firma_director: Optional[UploadFile] = File(None),
+    nombre_director: Optional[str] = Form(None),
+    firma_director_base64: Optional[str] = Form(None),
     color_fondo: str = Form(...),
     color_letra: str = Form(...),
+    color_letra_impresion: str = Form("#0f172a"),
     usuario_creacion_id: int = Form(...),
     tipo_id: int = Form(...),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
 ):
     logo_base64 = await ImageUtils.upload_to_base64(logo)
     patron_base64 = await ImageUtils.upload_to_base64(patron)
+    logo_impresion_base64 = await ImageUtils.upload_to_base64(logo_impresion)
+    patron_impresion_base64 = await ImageUtils.upload_to_base64(patron_impresion)
+    firma_base64 = await ImageUtils.upload_to_base64(firma_director) if firma_director else firma_director_base64
 
     data = BrandingCredentialsCreateSchema(
         idCliente=idCliente,
@@ -157,8 +167,13 @@ async def create_branding_credentials(
         version_publicada=version_publicada,
         logo=logo_base64,
         patron=patron_base64,
+        logo_impresion=logo_impresion_base64,
+        patron_impresion=patron_impresion_base64,
         color_fondo=color_fondo,
         color_letra=color_letra,
+        color_letra_impresion=color_letra_impresion,
+        nombre_director=nombre_director,
+        firma_director=firma_base64,
         usuario_creacion_id=usuario_creacion_id,
         tipo_id=tipo_id,
     )
@@ -195,6 +210,42 @@ async def list_history_branding_credentials(
     page_size: int = Query(10, ge=1, le=100, description="Cantidad de registros por página (máx 100)")
 ):
     return await service.list_history_branding_credentials(id, client_id, page, page_size)
+
+# =============================================================================
+# BRANDING INSTITUCIONAL (GLOBAL - DIRECTOR GENERAL Y FIRMA OFICIAL)
+# =============================================================================
+@router.get("/branding-credentials/institucional/info-published")
+@router.get("/branding-institucional/info-published")
+async def get_institucional_published(
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+):
+    return await service.get_institucional_published(client_id)
+
+@router.post("/branding-credentials/institucional/create")
+@router.post("/branding-institucional/create")
+async def create_institucional_version(
+    data: InstitucionalConfigCreateSchema = Body(...),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+):
+    return await service.create_institucional_version(data, client_id)
+
+@router.get("/branding-credentials/institucional/list-history-versions")
+@router.get("/branding-institucional/list-history-versions")
+async def list_institucional_history(
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    page: int = Query(1, ge=1, description="Número de página a consultar"),
+    page_size: int = Query(10, ge=1, le=100, description="Cantidad de registros por página (máx 100)")
+):
+    return await service.list_institucional_history(client_id, page, page_size)
+
+@router.put("/branding-credentials/institucional/update/change-version/{id}")
+@router.put("/branding-institucional/update/change-version/{id}")
+async def publish_institucional_version(
+    id: int = Path(..., description="ID de la versión institucional a publicar"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+):
+    return await service.publish_institucional_version(id, client_id)
+
 
 # Auditoria API
 @router.get("/audit-api/list", response_model=Dict[str, Any])

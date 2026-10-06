@@ -666,6 +666,7 @@ class TarjetasRepository:
                         version AS version_actual,
                         CASE WHEN publicado = 1 THEN version ELSE NULL END AS version_publicada,
                         logo, patron, color_fondo, color_letra,
+                        nombre_director, firma_director,
                         usuario_creacion_id,
                         DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_branding
@@ -707,9 +708,9 @@ class TarjetasRepository:
             await cursor.execute(
                 """
                 INSERT INTO tn_tarjetavirtual_configuracion_branding (
-                    tipo_id, version, publicado, logo, patron, color_fondo,
-                    color_letra, usuario_creacion_id
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    tipo_id, version, publicado, logo, patron, logo_impresion, patron_impresion,
+                    color_fondo, color_letra, color_letra_impresion, nombre_director, firma_director, usuario_creacion_id
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     tipo_id,
@@ -717,8 +718,13 @@ class TarjetasRepository:
                     is_published,
                     branding_credencials_data.get("logo"),
                     branding_credencials_data.get("patron"),
+                    branding_credencials_data.get("logo_impresion"),
+                    branding_credencials_data.get("patron_impresion"),
                     branding_credencials_data.get("color_fondo"),
                     branding_credencials_data.get("color_letra"),
+                    branding_credencials_data.get("color_letra_impresion", "#0f172a"),
+                    branding_credencials_data.get("nombre_director"),
+                    branding_credencials_data.get("firma_director"),
                     branding_credencials_data.get("usuario_creacion_id")
                 )
             )
@@ -748,7 +754,9 @@ class TarjetasRepository:
                         id, tipo_id, version, publicado,
                         version AS version_actual,
                         CASE WHEN publicado = 1 THEN version ELSE NULL END AS version_publicada,
-                        logo, patron, color_fondo, color_letra,
+                        logo, patron, logo_impresion, patron_impresion,
+                        color_fondo, color_letra, color_letra_impresion,
+                        nombre_director, firma_director,
                         usuario_creacion_id,
                         DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_branding
@@ -772,7 +780,9 @@ class TarjetasRepository:
                     SELECT
                         id, tipo_id, version, publicado,
                         version AS version_publicada,
-                        logo, patron, color_fondo, color_letra,
+                        logo, patron, logo_impresion, patron_impresion,
+                        color_fondo, color_letra, color_letra_impresion,
+                        nombre_director, firma_director,
                         usuario_creacion_id,
                         DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_branding
@@ -790,7 +800,9 @@ class TarjetasRepository:
                         SELECT
                             id, tipo_id, version, publicado,
                             version AS version_publicada,
-                            logo, patron, color_fondo, color_letra,
+                            logo, patron, logo_impresion, patron_impresion,
+                            color_fondo, color_letra, color_letra_impresion,
+                            nombre_director, firma_director,
                             usuario_creacion_id,
                             DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                         FROM tn_tarjetavirtual_configuracion_branding
@@ -895,8 +907,13 @@ class TarjetasRepository:
                         publicado,
                         logo,
                         patron,
+                        logo_impresion,
+                        patron_impresion,
                         color_fondo,
                         color_letra,
+                        color_letra_impresion,
+                        nombre_director,
+                        firma_director,
                         DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_branding
                     WHERE tipo_id = %s OR id = %s
@@ -914,6 +931,162 @@ class TarjetasRepository:
                     "page_size": page_size,
                     "total_pages": total_pages
                 }
+        finally:
+            conn.close()
+
+    # =========================================================================
+    # FIRMA Y DIRECCIÓN INSTITUCIONAL (GLOBAL PARA TODA LA ENTIDAD)
+    # =========================================================================
+    async def get_institucional_published(self, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    """
+                    SELECT
+                        id,
+                        nombre_director,
+                        cargo_director,
+                        firma_director,
+                        version,
+                        publicado,
+                        usuario_creacion_id,
+                        DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
+                    FROM tn_tarjetavirtual_configuracion_institucional
+                    WHERE publicado = 1
+                    ORDER BY version DESC
+                    LIMIT 1
+                    """
+                )
+                row = await cursor.fetchone()
+                if not row:
+                    await cursor.execute(
+                        """
+                        SELECT
+                            id,
+                            nombre_director,
+                            cargo_director,
+                            firma_director,
+                            version,
+                            publicado,
+                            usuario_creacion_id,
+                            DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
+                        FROM tn_tarjetavirtual_configuracion_institucional
+                        ORDER BY version DESC
+                        LIMIT 1
+                        """
+                    )
+                    row = await cursor.fetchone()
+                return row
+        finally:
+            conn.close()
+
+    async def create_institucional_version(self, data: Dict[str, Any], client_id: Optional[int] = None) -> int:
+        cid = client_id or data.get("client_id", 20001)
+        conn = await get_client_connection(cid)
+        cursor = None
+        try:
+            cursor = await conn.cursor()
+            await cursor.execute("START TRANSACTION")
+
+            await cursor.execute("SELECT COALESCE(MAX(version), 0) FROM tn_tarjetavirtual_configuracion_institucional")
+            max_row = await cursor.fetchone()
+            next_version = (max_row[0] if max_row else 0) + 1
+
+            is_published = 0
+            if data.get("publicar_inmediato"):
+                is_published = 1
+                await cursor.execute("UPDATE tn_tarjetavirtual_configuracion_institucional SET publicado = 0")
+
+            await cursor.execute(
+                """
+                INSERT INTO tn_tarjetavirtual_configuracion_institucional (
+                    nombre_director, cargo_director, firma_director,
+                    version, publicado, usuario_creacion_id
+                ) VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    data.get("nombre_director"),
+                    data.get("cargo_director", "DIRECTOR GENERAL"),
+                    data.get("firma_director"),
+                    next_version,
+                    is_published,
+                    data.get("usuario_creacion_id", 141)
+                )
+            )
+            new_id = cursor.lastrowid
+            await cursor.execute("COMMIT")
+            return new_id
+        except Exception as e:
+            if cursor:
+                await cursor.execute("ROLLBACK")
+            print(f"Error en create_institucional_version: {e}")
+            raise e
+        finally:
+            if cursor:
+                await cursor.close()
+            if conn:
+                conn.close()
+
+    async def list_institucional_history(
+        self,
+        client_id: Optional[int] = None,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> Dict[str, Any]:
+        page_size = min(max(page_size, 1), 100)
+        page = max(page, 1)
+        offset = (page - 1) * page_size
+
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute("SELECT COUNT(*) AS total FROM tn_tarjetavirtual_configuracion_institucional")
+                total_row = await cursor.fetchone()
+                total = total_row["total"] if total_row else 0
+                total_pages = math.ceil(total / page_size) if total > 0 else 0
+
+                await cursor.execute(
+                    """
+                    SELECT
+                        id,
+                        nombre_director,
+                        cargo_director,
+                        firma_director,
+                        version,
+                        publicado,
+                        DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
+                    FROM tn_tarjetavirtual_configuracion_institucional
+                    ORDER BY version DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    (page_size, offset)
+                )
+                rows = await cursor.fetchall()
+
+                return {
+                    "data": rows,
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "total_pages": total_pages
+                }
+        finally:
+            conn.close()
+
+    async def publish_institucional_version(self, version_id: int, client_id: Optional[int] = None) -> None:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cursor:
+                await cursor.execute("UPDATE tn_tarjetavirtual_configuracion_institucional SET publicado = 0")
+                await cursor.execute(
+                    """
+                    UPDATE tn_tarjetavirtual_configuracion_institucional
+                    SET publicado = 1, updated_at = NOW()
+                    WHERE id = %s OR version = %s
+                    """,
+                    (version_id, version_id)
+                )
         finally:
             conn.close()
 
