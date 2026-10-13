@@ -210,6 +210,8 @@ class TarjetasRepository:
                             ttc.estado_contador,
                             ttc.resolucion,
                             DATE_FORMAT(ttc.fecha_estado, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_estado,
+                            DATE_FORMAT(ttc.fecha_radicacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_radicacion,
+                            DATE_FORMAT(ttc.fecha_radicacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_registro,
                             DATE_FORMAT(ttc.fecha_resolucion, '%%Y-%%m-%%d') AS fecha_resolucion,
                             ttc.acta_jcc,
                             DATE_FORMAT(ttc.fecha_grado, '%%Y-%%m-%%d') AS fecha_grado,
@@ -230,6 +232,7 @@ class TarjetasRepository:
                             DATE_FORMAT(tts.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision,
                             tts.tipo_sociedad,
                             tts.inscripcion,
+                            tts.correo,
                             DATE_FORMAT(tts.fecha_radicacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_radicacion,
                             tts.estado AS estado_tarjeta,
                             tts.estado_sociedad AS estado_registro,
@@ -293,6 +296,8 @@ class TarjetasRepository:
             ttc.estado_contador,
             ttc.resolucion,
             DATE_FORMAT(ttc.fecha_estado, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_estado,
+            DATE_FORMAT(ttc.fecha_radicacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_radicacion,
+            DATE_FORMAT(ttc.fecha_radicacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_registro,
             DATE_FORMAT(ttc.fecha_resolucion, '%%Y-%%m-%%d') AS fecha_resolucion,
             ttc.acta_jcc,
             DATE_FORMAT(ttc.fecha_grado, '%%Y-%%m-%%d') AS fecha_grado,
@@ -314,6 +319,7 @@ class TarjetasRepository:
             DATE_FORMAT(tts.fecha_emision, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_emision,
             tts.tipo_sociedad,
             tts.inscripcion,
+            tts.correo,
             DATE_FORMAT(tts.fecha_radicacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_radicacion,
             tts.estado AS estado_tarjeta,
             tts.estado_sociedad AS estado_registro,
@@ -1378,6 +1384,7 @@ class TarjetasRepository:
                         nit,
                         tipo_sociedad,
                         inscripcion,
+                        correo,
                         fecha_radicacion,
                         estado_sociedad,
                         resolucion,
@@ -1393,7 +1400,7 @@ class TarjetasRepository:
                         hash_sha256
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, NOW(), %s, %s, %s, %s, %s
+                        %s, %s, %s, NOW(), %s, %s, %s, %s, %s
                     )
                 """
                 
@@ -1407,6 +1414,7 @@ class TarjetasRepository:
                     data.get("nit") or "",
                     data.get("tipo_sociedad") or "SOCIEDAD DE CONTADORES",
                     data.get("inscripcion"),
+                    data.get("correo"),
                     data.get("fecha_radicacion"),
                     data.get("estado_sociedad") or "ACTIVO",
                     data.get("resolucion"),
@@ -2134,4 +2142,4 @@ class TarjetasRepository:
     async def get_ultima_sincronizacion_log(self, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
         logs = await self.get_sincronizacion_logs(client_id, limit=1)
         return logs[0] if logs else None
-
+
