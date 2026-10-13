@@ -126,6 +126,7 @@ class SociedadCreateSchema(BaseModel):
     nit: str = Field(..., description="NIT de la sociedad")
     tipo_sociedad: str = Field(..., description="Tipo de sociedad")
     inscripcion: Optional[int] = Field(None, description="Número de inscripción")
+    correo: Optional[str] = Field(None, description="Correo de la sociedad")
     fecha_radicacion: Optional[datetime] = Field(None, description="Fecha de radicación")
     estado_sociedad: str = Field("ACTIVO", description="Estado de la sociedad")
     resolucion: Optional[str] = Field(None, description="Número de resolución")
@@ -163,4 +164,4 @@ class InstitucionalConfigUpdateSchema(BaseModel):
     cargo_director: Optional[str] = Field(None, description="Cargo oficial institucional")
     firma_director: Optional[str] = Field(None, description="Firma en Base64")
     publicado: Optional[bool] = Field(None, description="Estado de publicación")
-
+

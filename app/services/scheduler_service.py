@@ -251,6 +251,7 @@ class SchedulerService:
                             "acta_jcc": item.get("acta_jcc") or item.get("ACTA_JCC"),
                             "estado_solicitud": item.get("estado_solicitud") or item.get("ESTADO_SOLICITUD"),
                             "tipo_solicitud": item.get("tipo_solicitud") or item.get("TIPO_SOLICITUD"),
+                            "correo": item.get("correo") or item.get("EMAIL") or "",
                             "tipo_asociado": tipo,
                             "estado": EstadoTarjetaEnum.EMITIDA.value,
                             "foto": item.get("foto") or item.get("pdf") or None,
