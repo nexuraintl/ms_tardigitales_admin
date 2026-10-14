@@ -526,8 +526,9 @@ class TarjetasRepository:
         finally:
             conn.close()
 
-    async def get_validador_config(self, client_id: Optional[int] = None) -> Dict[str, Any]:
+    async def get_validador_config(self, tipo_tarjeta: str = "contadores", client_id: Optional[int] = None) -> Dict[str, Any]:
         conn = await get_client_connection(client_id)
+        tipo_normalizado = "sociedades" if tipo_tarjeta and "sociedad" in str(tipo_tarjeta).lower() else "contadores"
         try:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 await cursor.execute(
@@ -535,80 +536,130 @@ class TarjetasRepository:
                     SELECT
                         id,
                         client_id,
-                        val_foto,
-                        val_nombres,
-                        val_matricula,
-                        val_numero_identificacion,
+                        tipo_tarjeta,
+                        val_tarjeta_profesional,
+                        val_fecha_resolucion,
+                        val_resolucion,
+                        val_nombre,
+                        val_cedula,
+                        val_institucion,
+                        val_expediente,
+                        val_numero_registro,
+                        val_razon_social,
+                        val_nit,
+                        val_tipo_registro,
                         val_codigo_tarjeta,
+                        val_foto,
                         val_estado
                     FROM tn_tarjetavirtual_config_validador
-                    WHERE client_id = %s
+                    WHERE client_id = %s AND tipo_tarjeta = %s
                     LIMIT 1
                     """,
-                    (client_id,)
+                    (client_id, tipo_normalizado)
                 )
                 row = await cursor.fetchone()
                 if row:
-                    row["val_foto"] = bool(row["val_foto"])
-                    row["val_nombres"] = bool(row["val_nombres"])
-                    row["val_matricula"] = bool(row["val_matricula"])
-                    row["val_numero_identificacion"] = bool(row["val_numero_identificacion"])
-                    row["val_codigo_tarjeta"] = bool(row["val_codigo_tarjeta"])
-                    row["val_estado"] = bool(row["val_estado"])
+                    for k in row:
+                        if k.startswith("val_"):
+                            row[k] = bool(row[k])
+                    # Compatibilidad con nombres antiguos
+                    row["val_nombres"] = row.get("val_nombre", True)
+                    row["val_matricula"] = row.get("val_tarjeta_profesional", True)
+                    row["val_numero_identificacion"] = row.get("val_cedula", True)
                     return row
+
+                # Fallback por defecto si no existe registro
                 return {
+                    "client_id": client_id,
+                    "tipo_tarjeta": tipo_normalizado,
+                    "val_tarjeta_profesional": True,
+                    "val_fecha_resolucion": True,
+                    "val_resolucion": True,
+                    "val_nombre": True,
+                    "val_cedula": True,
+                    "val_institucion": True,
+                    "val_expediente": True,
+                    "val_numero_registro": True,
+                    "val_razon_social": True,
+                    "val_nit": True,
+                    "val_tipo_registro": True,
+                    "val_codigo_tarjeta": True,
                     "val_foto": True,
+                    "val_estado": True,
                     "val_nombres": True,
                     "val_matricula": True,
-                    "val_numero_identificacion": True,
-                    "val_codigo_tarjeta": True,
-                    "val_estado": True
+                    "val_numero_identificacion": True
                 }
         finally:
             conn.close()
 
-    async def save_validador_config(self, config_data: Dict[str, Any], client_id: Optional[int] = None) -> bool:
+    async def save_validador_config(self, config_data: Dict[str, Any], tipo_tarjeta: str = "contadores", client_id: Optional[int] = None) -> bool:
         conn = await get_client_connection(client_id)
+        tipo_normalizado = "sociedades" if tipo_tarjeta and "sociedad" in str(tipo_tarjeta).lower() else "contadores"
         try:
             async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "SELECT id FROM tn_tarjetavirtual_config_validador WHERE client_id = %s LIMIT 1",
-                    (client_id,)
-                )
-                exists = await cursor.fetchone()
-                
-                vf = 1 if config_data.get("val_foto") else 0
-                vn = 1 if config_data.get("val_nombres") else 0
-                vm = 1 if config_data.get("val_matricula") else 0
-                vnum = 1 if config_data.get("val_numero_identificacion") else 0
-                vc = 1 if config_data.get("val_codigo_tarjeta") else 0
-                ve = 1 if config_data.get("val_estado") else 0
+                # Helper para extraer booleano con fallback
+                def b(key: str, fallback_key: str = None, default: int = 1) -> int:
+                    val = config_data.get(key)
+                    if val is None and fallback_key:
+                        val = config_data.get(fallback_key)
+                    if val is None:
+                        return default
+                    return 1 if bool(val) else 0
 
-                if exists:
-                    await cursor.execute(
-                        """
-                        UPDATE tn_tarjetavirtual_config_validador SET
-                            val_foto = %s,
-                            val_nombres = %s,
-                            val_matricula = %s,
-                            val_numero_identificacion = %s,
-                            val_codigo_tarjeta = %s,
-                            val_estado = %s,
-                            fecha_actualizacion = CURRENT_TIMESTAMP
-                        WHERE client_id = %s
-                        """,
-                        (vf, vn, vm, vnum, vc, ve, client_id)
+                # Campos Contadores
+                v_tp = b("val_tarjeta_profesional", "val_matricula", 1)
+                v_fr = b("val_fecha_resolucion", None, 1)
+                v_res = b("val_resolucion", None, 1)
+                v_nom = b("val_nombre", "val_nombres", 1)
+                v_ced = b("val_cedula", "val_numero_identificacion", 1)
+                v_inst = b("val_institucion", None, 1)
+                v_exp = b("val_expediente", None, 1)
+                v_est = b("val_estado", None, 1)
+
+                # Campos Sociedades
+                v_reg = b("val_numero_registro", "val_matricula", 1)
+                v_rs = b("val_razon_social", "val_nombres", 1)
+                v_nit = b("val_nit", "val_numero_identificacion", 1)
+                v_tr = b("val_tipo_registro", None, 1)
+
+                # Comunes
+                v_cod = b("val_codigo_tarjeta", None, 1)
+                v_foto = b("val_foto", None, 1)
+
+                await cursor.execute(
+                    """
+                    INSERT INTO tn_tarjetavirtual_config_validador (
+                        client_id, tipo_tarjeta,
+                        val_tarjeta_profesional, val_fecha_resolucion, val_resolucion,
+                        val_nombre, val_cedula, val_institucion, val_expediente,
+                        val_numero_registro, val_razon_social, val_nit, val_tipo_registro,
+                        val_codigo_tarjeta, val_foto, val_estado
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        val_tarjeta_profesional = VALUES(val_tarjeta_profesional),
+                        val_fecha_resolucion = VALUES(val_fecha_resolucion),
+                        val_resolucion = VALUES(val_resolucion),
+                        val_nombre = VALUES(val_nombre),
+                        val_cedula = VALUES(val_cedula),
+                        val_institucion = VALUES(val_institucion),
+                        val_expediente = VALUES(val_expediente),
+                        val_numero_registro = VALUES(val_numero_registro),
+                        val_razon_social = VALUES(val_razon_social),
+                        val_nit = VALUES(val_nit),
+                        val_tipo_registro = VALUES(val_tipo_registro),
+                        val_codigo_tarjeta = VALUES(val_codigo_tarjeta),
+                        val_foto = VALUES(val_foto),
+                        val_estado = VALUES(val_estado),
+                        fecha_actualizacion = CURRENT_TIMESTAMP
+                    """,
+                    (
+                        client_id, tipo_normalizado,
+                        v_tp, v_fr, v_res, v_nom, v_ced, v_inst, v_exp,
+                        v_reg, v_rs, v_nit, v_tr,
+                        v_cod, v_foto, v_est
                     )
-                else:
-                    await cursor.execute(
-                        """
-                        INSERT INTO tn_tarjetavirtual_config_validador (
-                            client_id, val_foto, val_nombres, val_matricula,
-                            val_numero_identificacion, val_codigo_tarjeta, val_estado
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        """,
-                        (client_id, vf, vn, vm, vnum, vc, ve)
-                    )
+                )
                 return True
         finally:
             conn.close()
@@ -652,7 +703,8 @@ class TarjetasRepository:
                         id, tipo_id, version, publicado,
                         version AS version_actual,
                         CASE WHEN publicado = 1 THEN version ELSE NULL END AS version_publicada,
-                        logo, patron, color_fondo, color_letra,
+                        logo, patron, logo_impresion, patron_impresion,
+                        color_fondo, color_letra, color_letra_impresion,
                         nombre_director, firma_director,
                         usuario_creacion_id,
                         DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
@@ -1824,7 +1876,7 @@ class TarjetasRepository:
                     """,
                     (resultado, tarjeta_id, mensaje_detalle, item_id)
                 )
-                col_inc = "exitosos = exitosos + 1" if resultado in ("emitido_exitosamente", "foto_ya_presente", "sin_foto_en_origen") else (
+                col_inc = "exitosos = exitosos + 1" if resultado in ("emitido_exitosamente", "foto_ya_presente", "sin_foto_en_origen", "sin_novedad", "estado_actualizado") else (
                     "duplicados = duplicados + 1" if resultado == "omitido_duplicado" else "fallidos = fallidos + 1"
                 )
                 await cursor.execute(
@@ -2124,3 +2176,174 @@ class TarjetasRepository:
         logs = await self.get_sincronizacion_logs(client_id, limit=1)
         return logs[0] if logs else None
 
+
+    async def activar_tarjeta_movil(
+        self,
+        tarjeta_id: int,
+        tipo_tarjeta: str,
+        fcm_token: Optional[str] = None,
+        device_id: Optional[str] = None,
+        device_os: Optional[str] = None,
+        device_modelo: Optional[str] = None,
+        app_version: Optional[str] = None,
+        client_id: Optional[int] = None
+    ) -> bool:
+        tabla = "tn_tarjetavirtual_sociedades" if tipo_tarjeta == "sociedades" else "tn_tarjetavirtual_contadores"
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cursor:
+                # 1. Actualizar estado de la tarjeta a 'Activa'
+                await cursor.execute(
+                    f"""
+                    UPDATE {tabla}
+                    SET estado = 'Activa',
+                        fecha_estado = NOW()
+                    WHERE id = %s
+                    """,
+                    (tarjeta_id,)
+                )
+
+                # 2. Registrar en historial de estados
+                desc = f"Activación satisfactoria en dispositivo móvil ({device_os or 'Mobile'} - {device_modelo or 'App'})"
+                await cursor.execute(
+                    """
+                    INSERT INTO tn_tarjetavirtual_estados_historial
+                        (tarjeta_id, estado, descripcion, fecha, realizado_por)
+                    VALUES (%s, 'Activa', %s, NOW(), 'App Móvil')
+                    """,
+                    (tarjeta_id, desc)
+                )
+
+                # 3. Registrar o actualizar dispositivo satélite en tn_tarjetavirtual_dispositivos
+                if device_id or fcm_token:
+                    await cursor.execute(
+                        """
+                        SELECT id FROM tn_tarjetavirtual_dispositivos
+                        WHERE tarjeta_id = %s AND tipo_tarjeta = %s AND device_id = %s
+                        LIMIT 1
+                        """,
+                        (tarjeta_id, tipo_tarjeta, device_id)
+                    )
+                    row = await cursor.fetchone()
+                    if row:
+                        await cursor.execute(
+                            """
+                            UPDATE tn_tarjetavirtual_dispositivos
+                            SET fcm_token = COALESCE(%s, fcm_token),
+                                device_os = COALESCE(%s, device_os),
+                                device_modelo = COALESCE(%s, device_modelo),
+                                app_version = COALESCE(%s, app_version),
+                                estado = 'activo',
+                                fecha_ultimo_acceso = NOW()
+                            WHERE id = %s
+                            """,
+                            (fcm_token, device_os, device_modelo, app_version, row[0])
+                        )
+                    else:
+                        await cursor.execute(
+                            """
+                            INSERT INTO tn_tarjetavirtual_dispositivos
+                                (client_id, tarjeta_id, tipo_tarjeta, fcm_token, device_id, device_os, device_modelo, app_version, estado, fecha_activacion, fecha_ultimo_acceso)
+                            VALUES
+                                (%s, %s, %s, %s, %s, %s, %s, %s, 'activo', NOW(), NOW())
+                            """,
+                            (client_id or 20001, tarjeta_id, tipo_tarjeta, fcm_token, device_id, device_os, device_modelo, app_version)
+                        )
+
+                await conn.commit()
+                return True
+        finally:
+            conn.close()
+
+
+    async def get_active_or_emitted_tarjetas(
+        self,
+        tipo_tarjeta: str = "contadores",
+        client_id: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        conn = await get_client_connection(client_id)
+        tabla = "tn_tarjetavirtual_sociedades" if tipo_tarjeta == "sociedades" else "tn_tarjetavirtual_contadores"
+        doc_col = "nit" if tipo_tarjeta == "sociedades" else "no_documento"
+        reg_col = "inscripcion" if tipo_tarjeta == "sociedades" else "no_tarjeta"
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                query = f"""
+                    SELECT id, {doc_col} AS documento_o_nit, {reg_col} AS matricula_o_inscripcion, estado
+                    FROM {tabla}
+                    WHERE estado IN ('Activa', 'Emitida')
+                    ORDER BY id ASC
+                """
+                await cursor.execute(query)
+                return await cursor.fetchall()
+        finally:
+            conn.close()
+
+    async def get_tarjeta_by_documento_or_nit(
+        self,
+        documento_o_nit: str,
+        tipo_tarjeta: str = "contadores",
+        client_id: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
+        conn = await get_client_connection(client_id)
+        tabla = "tn_tarjetavirtual_sociedades" if tipo_tarjeta == "sociedades" else "tn_tarjetavirtual_contadores"
+        doc_col = "nit" if tipo_tarjeta == "sociedades" else "no_documento"
+        reg_col = "inscripcion" if tipo_tarjeta == "sociedades" else "no_tarjeta"
+        doc_limpio = "".join(ch for ch in str(documento_o_nit) if ch.isalnum())
+        doc_raiz = documento_o_nit.split("-")[0].strip() if "-" in documento_o_nit else doc_limpio
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                if tipo_tarjeta == "sociedades":
+                    query = f"""
+                        SELECT id, {doc_col} AS documento_o_nit, {reg_col} AS matricula_o_inscripcion, estado 
+                        FROM {tabla} 
+                        WHERE {doc_col} = %s 
+                           OR REPLACE({doc_col}, '-', '') = %s 
+                           OR {doc_col} LIKE CONCAT(%s, '-%')
+                           OR {doc_col} LIKE CONCAT(%s, '%')
+                        LIMIT 1
+                    """
+                    await cursor.execute(query, (documento_o_nit, doc_limpio, doc_raiz, doc_raiz))
+                else:
+                    query = f"SELECT id, {doc_col} AS documento_o_nit, {reg_col} AS matricula_o_inscripcion, estado FROM {tabla} WHERE {doc_col} = %s LIMIT 1"
+                    await cursor.execute(query, (doc_limpio,))
+                return await cursor.fetchone()
+        finally:
+            conn.close()
+
+    async def actualizar_estado_por_novedad_jcc(
+        self,
+        tarjeta_id: int,
+        tipo_tarjeta: str,
+        nuevo_estado: str,
+        novedad_jcc: str,
+        resolucion: Optional[str] = None,
+        client_id: Optional[int] = None
+    ) -> bool:
+        tabla = "tn_tarjetavirtual_sociedades" if tipo_tarjeta == "sociedades" else "tn_tarjetavirtual_contadores"
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    f"UPDATE {tabla} SET estado = %s, fecha_estado = NOW() WHERE id = %s",
+                    (nuevo_estado, tarjeta_id)
+                )
+                desc = f"Novedad detectada en MYJCC: {novedad_jcc}"
+                if resolucion:
+                    desc += f" (Resolución: {resolucion})"
+                await cursor.execute(
+                    """
+                    INSERT INTO tn_tarjetavirtual_estados_historial
+                        (tarjeta_id, estado, descripcion, fecha, realizado_por)
+                    VALUES (%s, %s, %s, NOW(), 'Sincronización Automática MYJCC')
+                    """,
+                    (tarjeta_id, nuevo_estado, desc)
+                )
+                if nuevo_estado in ("Inactiva", "Cancelada"):
+                    await cursor.execute(
+                        "UPDATE tn_tarjetavirtual_dispositivos SET estado = 'inactivo' WHERE tarjeta_id = %s AND tipo_tarjeta = %s",
+                        (tarjeta_id, tipo_tarjeta)
+                    )
+                await conn.commit()
+                return True
+        finally:
+            conn.close()

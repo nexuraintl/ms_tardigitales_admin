@@ -5,6 +5,7 @@ from fastapi import HTTPException, UploadFile, status
 from datetime import datetime
 from app.repositories.tarjetas_repository import TarjetasRepository
 from app.schemas.tarjetas_schema import (
+    ActivacionMovilRequestSchema,
     TarjetaCreateSchema,
     ValidadorConfigSchema,
     BrandingCredentialsCreateSchema,
@@ -393,9 +394,9 @@ class TarjetasService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    async def get_validador_config(self, client_id: Optional[int] = None) -> Dict[str, Any]:
+    async def get_validador_config(self, tipo_tarjeta: str = "contadores", client_id: Optional[int] = None) -> Dict[str, Any]:
         try:
-            return await self.repository.get_validador_config(client_id)
+            return await self.repository.get_validador_config(tipo_tarjeta, client_id)
         except PipelineException:
             raise
         except Exception as e:
@@ -408,10 +409,11 @@ class TarjetasService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    async def save_validador_config(self, data: ValidadorConfigSchema, client_id: Optional[int] = None) -> Dict[str, Any]:
+    async def save_validador_config(self, data: ValidadorConfigSchema, tipo_tarjeta: str = "contadores", client_id: Optional[int] = None) -> Dict[str, Any]:
         try:
             config_dict = data.dict()
-            if not any(bool(v) for v in config_dict.values()):
+            # Validar que al menos un campo sea True
+            if not any(bool(v) for k, v in config_dict.items() if k.startswith("val_")):
                 raise PipelineException(
                     etapa="CONFIGURACION_VALIDADOR",
                     mensaje="Debe seleccionar al menos un campo visible para guardar la configuración del validador público.",
@@ -419,7 +421,7 @@ class TarjetasService:
                     status_code=status.HTTP_400_BAD_REQUEST
                 )
 
-            await self.repository.save_validador_config(config_dict, client_id)
+            await self.repository.save_validador_config(config_dict, tipo_tarjeta, client_id)
             return {
                 "status": "success",
                 "message": "Configuración del validador guardada exitosamente."
@@ -464,6 +466,9 @@ class TarjetasService:
 
             logo_val = data.logo or (existing.get("logo") if existing else None)
             patron_val = data.patron or (existing.get("patron") if existing else None)
+            logo_impresion_val = data.logo_impresion or (existing.get("logo_impresion") if existing else None)
+            patron_impresion_val = data.patron_impresion or (existing.get("patron_impresion") if existing else None)
+            color_letra_impresion_val = data.color_letra_impresion or (existing.get("color_letra_impresion") if existing else "#0f172a")
             nombre_director_val = data.nombre_director if data.nombre_director is not None else (existing.get("nombre_director") if existing else None)
             firma_director_val = data.firma_director if data.firma_director is not None else (existing.get("firma_director") if existing else None)
 
@@ -472,8 +477,11 @@ class TarjetasService:
                 "version_publicada": data.version_publicada,
                 "logo": logo_val,
                 "patron": patron_val,
+                "logo_impresion": logo_impresion_val,
+                "patron_impresion": patron_impresion_val,
                 "color_fondo": data.color_fondo,
                 "color_letra": data.color_letra,
+                "color_letra_impresion": color_letra_impresion_val,
                 "nombre_director": nombre_director_val,
                 "firma_director": firma_director_val,
                 "usuario_creacion_id": data.usuario_creacion_id,
@@ -869,3 +877,66 @@ class TarjetasService:
                 tabla_afectada="jcc_auditoria_api",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    async def activar_tarjeta_movil(self, payload: ActivacionMovilRequestSchema) -> Dict[str, Any]:
+        client_id = payload.client_id or 20001
+        # 1. Obtener tarjeta por hash
+        tarjeta = await self.repository.get_by_hash(payload.token, client_id=client_id)
+        if not tarjeta:
+            raise PipelineException(
+                etapa="ACTIVACION_MOVIL",
+                mensaje="No se encontró ninguna credencial registrada con el código o token suministrado.",
+                cliente_id=client_id,
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+
+        estado_actual = str(tarjeta.get("estado_tarjeta") or tarjeta.get("estado") or "").strip()
+        tipo_tarjeta = tarjeta.get("tipo_tarjeta") or ("sociedades" if tarjeta.get("nit") else "contadores")
+        tarjeta_id = tarjeta["id"]
+
+        # 2. Validar que la tarjeta no esté cancelada o inactiva
+        if estado_actual.lower() in ["cancelada", "inactiva"]:
+            raise PipelineException(
+                etapa="ACTIVACION_MOVIL",
+                mensaje=f"La credencial se encuentra en estado '{estado_actual}' y no puede ser activada en el dispositivo móvil.",
+                cliente_id=client_id,
+                status_code=status.HTTP_409_CONFLICT
+            )
+
+        ya_estaba_activa = estado_actual.lower() in ["activa", "activo"]
+
+        # 3. Ejecutar activación en base de datos
+        await self.repository.activar_tarjeta_movil(
+            tarjeta_id=tarjeta_id,
+            tipo_tarjeta=tipo_tarjeta,
+            fcm_token=payload.fcm_token,
+            device_id=payload.device_id,
+            device_os=payload.device_os,
+            device_modelo=payload.device_modelo,
+            app_version=payload.app_version,
+            client_id=client_id
+        )
+
+        # 4. Obtener branding publicado para la app móvil
+        try:
+            branding = await self.get_branding_public(tipo=tipo_tarjeta, client_id=client_id)
+        except Exception as e_br:
+            print(f"[TarjetasService] Advertencia obteniendo branding en activacion: {e_br}")
+            branding = None
+
+        # 5. Refrescar estado en el objeto retorno
+        tarjeta["estado_tarjeta"] = "Activa"
+        tarjeta["estado"] = "Activa"
+
+        return {
+            "success": True,
+            "mensaje": "Credencial ya se encontraba activa. Dispositivo móvil sincronizado." if ya_estaba_activa else "Credencial digital activada exitosamente en el dispositivo móvil.",
+            "data": {
+                "tarjeta": tarjeta,
+                "branding": branding,
+                "dispositivo": {
+                    "device_id": payload.device_id,
+                    "device_os": payload.device_os,
+                    "fcm_token_registrado": bool(payload.fcm_token)
+                }
+            }
+        }
