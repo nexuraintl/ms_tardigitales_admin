@@ -67,6 +67,13 @@ class QueueWorkerService:
                 )
 
                 if not items:
+                    # En momentos de reposo, rescatar items huerfanos y finalizar lotes pendientes
+                    try:
+                        await self.repository.recover_stuck_queue_items(timeout_minutes=5, client_id=DEFAULT_CLIENT_ID)
+                        await self.repository.finalize_uncompleted_lotes_if_ready(client_id=DEFAULT_CLIENT_ID)
+                    except Exception as clean_err:
+                        logger.warning(f"[QueueWorker] Verificacion periodica de lotes: {clean_err}")
+
                     # No hay tareas pendientes en la cola: reposo de bajo consumo
                     self.estado = "EN_ESPERA"
                     await asyncio.sleep(queue_config.POLL_INTERVAL_SECONDS)
@@ -80,54 +87,68 @@ class QueueWorkerService:
                 for item in items:
                     item_id = item["id"]
                     lote_id = item["lote_id"]
-                    cid = item["client_id"]
+                    cid = item.get("client_id") or DEFAULT_CLIENT_ID
                     doc = item["documento_o_nit"]
                     tipo_tarjeta = item.get("tipo_tarjeta", "contadores")
                     tipo_tramite = item.get("tipo_tramite", "primeraVez")
                     lotes_afectados.add(lote_id)
 
-                    # Reclamar ítem para evitar procesamiento duplicado
-                    await self.repository.claim_queue_item(item_id=item_id, lote_id=lote_id, client_id=cid)
+                    try:
+                        # Reclamar item para evitar procesamiento duplicado
+                        await self.repository.claim_queue_item(item_id=item_id, lote_id=lote_id, client_id=cid)
 
-                    # Procesar emisión o sincronización de estados a través del motor unificado
-                    if tipo_tramite == "sincronizacion_estados":
-                        res = await self.engine.sincronizar_estado_tarjeta_individual(
-                            documento_o_nit=doc,
-                            tipo_tarjeta=tipo_tarjeta,
+                        # Procesar emision o sincronizacion de estados a traves del motor unificado
+                        if tipo_tramite == "sincronizacion_estados":
+                            res = await self.engine.sincronizar_estado_tarjeta_individual(
+                                documento_o_nit=doc,
+                                tipo_tarjeta=tipo_tarjeta,
+                                client_id=cid
+                            )
+                        elif tipo_tarjeta == "sociedades":
+                            res = await self.engine.emitir_sociedad_individual(
+                                nit=doc,
+                                tipo_tramite=tipo_tramite,
+                                client_id=cid
+                            )
+                        else:
+                            res = await self.engine.sincronizar_foto_contador(
+                                documento=doc,
+                                tipo_tramite=tipo_tramite,
+                                client_id=cid
+                            )
+
+                        resultado_key = res.get("resultado", "error")
+
+                        # Control del Circuit Breaker por fallos de conectividad con JCC
+                        if resultado_key == "error_conexion":
+                            self._consecutive_network_errors += 1
+                        else:
+                            self._consecutive_network_errors = 0
+
+                        # Actualizar resultado en base de datos
+                        await self.repository.update_queue_item_result(
+                            item_id=item_id,
+                            lote_id=lote_id,
+                            resultado=resultado_key,
+                            tarjeta_id=res.get("id"),
+                            mensaje_detalle=res.get("mensaje"),
                             client_id=cid
                         )
-                    elif tipo_tarjeta == "sociedades":
-                        res = await self.engine.emitir_sociedad_individual(
-                            nit=doc,
-                            tipo_tramite=tipo_tramite,
-                            client_id=cid
-                        )
-                    else:
-                        res = await self.engine.sincronizar_foto_contador(
-                            documento=doc,
-                            tipo_tramite=tipo_tramite,
-                            client_id=cid
-                        )
 
-                    resultado_key = res.get("resultado", "error")
+                    except Exception as item_err:
+                        logger.error(f"[QueueWorker] Error procesando item #{item_id} (doc: {doc}): {item_err}", exc_info=True)
+                        try:
+                            await self.repository.update_queue_item_result(
+                                item_id=item_id,
+                                lote_id=lote_id,
+                                resultado="fallido",
+                                mensaje_detalle=f"Fallo de procesamiento interno: {str(item_err)[:250]}",
+                                client_id=cid
+                            )
+                        except Exception as up_err:
+                            logger.error(f"[QueueWorker] Error marcando fallo en item #{item_id}: {up_err}")
 
-                    # Control del Circuit Breaker por fallos de conectividad con JCC
-                    if resultado_key == "error_conexion":
-                        self._consecutive_network_errors += 1
-                    else:
-                        self._consecutive_network_errors = 0
-
-                    # Actualizar resultado en base de datos
-                    await self.repository.update_queue_item_result(
-                        item_id=item_id,
-                        lote_id=lote_id,
-                        resultado=resultado_key,
-                        tarjeta_id=res.get("id"),
-                        mensaje_detalle=res.get("mensaje"),
-                        client_id=cid
-                    )
-
-                    # Si el Circuit Breaker se dispara por caída de VPN / red
+                    # Si el Circuit Breaker se dispara por caida de VPN / red
                     if self._consecutive_network_errors >= queue_config.CIRCUIT_BREAKER_FAIL_THRESHOLD:
                         logger.warning(
                             f"[QueueWorker] Circuit Breaker activado: {self._consecutive_network_errors} fallos seguidos de red con JCC. "
@@ -141,13 +162,13 @@ class QueueWorkerService:
                         self.estado = "EN_ESPERA"
                         break
 
-                    # Pausa microscópica parametrizable entre emisiones para proteger la API externa
+                    # Pausa microscopica parametrizable entre emisiones para proteger la API externa
                     if queue_config.ITEM_DELAY_SECONDS > 0:
                         await asyncio.sleep(queue_config.ITEM_DELAY_SECONDS)
 
-                # Verificar y finalizar los lotes que ya hayan culminado todos sus ítems
+                # Verificar y finalizar los lotes que ya hayan culminado todos sus items
                 for lid in lotes_afectados:
-                    await self.repository.finalize_lote_if_completed(lote_id=lid)
+                    await self.repository.finalize_lote_if_completed(lote_id=lid, client_id=DEFAULT_CLIENT_ID)
 
                 self.estado = "EN_ESPERA"
 
