@@ -486,3 +486,104 @@ class EmisionEngineService:
             )
 
         return resumen
+
+
+    async def sincronizar_estado_tarjeta_individual(
+        self,
+        documento_o_nit: str,
+        tipo_tarjeta: str = "contadores",
+        client_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        HU-JCC-015: Consulta en tiempo real el estado en MYJCC y aplica novedades
+        (inhabilitación, suspensión, cancelación o fallecimiento).
+        """
+        doc_limpio = "".join(c for c in str(documento_o_nit).strip() if c.isalnum())
+        if not doc_limpio:
+            return {"resultado": "error", "mensaje": "Identificación vacía o inválida."}
+
+        # 1. Obtener registro local
+        local_card = await self.repository.get_tarjeta_by_documento_or_nit(
+            documento_o_nit=str(documento_o_nit).strip(),
+            tipo_tarjeta=tipo_tarjeta,
+            client_id=client_id
+        )
+        if not local_card:
+            return {
+                "resultado": "no_encontrado_local",
+                "documento": doc_limpio,
+                "mensaje": f"Tarjeta {tipo_tarjeta} no existe localmente en BD."
+            }
+
+        tarjeta_id = local_card["id"]
+        estado_actual = local_card.get("estado", "Emitida")
+
+        # 2. Consultar estado oficial en MYJCC
+        consulta = await self.jcc_client.consultar_registro(
+            documento=doc_limpio,
+            tipo_tarjeta=tipo_tarjeta,
+            tipo="modificacion" if tipo_tarjeta == "sociedades" else "primeraVez",
+            client_id=client_id
+        )
+
+        if consulta and consulta.get("es_error_conexion"):
+            return {
+                "resultado": "error_conexion",
+                "id": tarjeta_id,
+                "documento": doc_limpio,
+                "mensaje": consulta.get("error") or "Fallo de conexión externa con la API JCC."
+            }
+
+        if not consulta or not consulta.get("encontrado") or not consulta.get("data"):
+            return {
+                "resultado": "sin_novedad",
+                "id": tarjeta_id,
+                "documento": doc_limpio,
+                "mensaje": "Titular sin novedades reportadas en JCC."
+            }
+
+        data_jcc = consulta["data"]
+        estado_jcc = (
+            data_jcc.get("estado_sociedad") if tipo_tarjeta == "sociedades" else data_jcc.get("estado_contador")
+        ) or "ACTIVO"
+        estado_jcc_upper = str(estado_jcc).strip().upper()
+        resolucion = data_jcc.get("resolucion")
+
+        # Novedades que inhabilitan la credencial
+        novedades_inactivantes = ["CANCELADO", "SANCIONADO", "SUSPENDIDO", "FALLECIDO", "INACTIVO", "INHABILITADO", "RETIRADO"]
+
+        es_novedad = any(nov in estado_jcc_upper for nov in novedades_inactivantes)
+
+        if es_novedad:
+            nuevo_estado = "Cancelada" if any(k in estado_jcc_upper for k in ["CANCELADO", "FALLECIDO"]) else "Inactiva"
+            if estado_actual != nuevo_estado:
+                await self.repository.actualizar_estado_por_novedad_jcc(
+                    tarjeta_id=tarjeta_id,
+                    tipo_tarjeta=tipo_tarjeta,
+                    nuevo_estado=nuevo_estado,
+                    novedad_jcc=estado_jcc_upper,
+                    resolucion=resolucion,
+                    client_id=client_id
+                )
+                logger.warning(f"[HU-JCC-015] Tarjeta #{tarjeta_id} ({doc_limpio}) actualizada a '{nuevo_estado}' por novedad JCC: {estado_jcc_upper}")
+                return {
+                    "resultado": "estado_actualizado",
+                    "id": tarjeta_id,
+                    "documento": doc_limpio,
+                    "mensaje": f"Novedad aplicada: Credencial cambiada a '{nuevo_estado}' (Causa: {estado_jcc_upper})"
+                }
+            else:
+                return {
+                    "resultado": "sin_novedad",
+                    "id": tarjeta_id,
+                    "documento": doc_limpio,
+                    "mensaje": f"Credencial ya se encontraba en estado '{nuevo_estado}'"
+                }
+
+        # Estado continúa Activo / Vigente
+        return {
+            "resultado": "sin_novedad",
+            "id": tarjeta_id,
+            "documento": doc_limpio,
+            "mensaje": "Estado confirmado activo y vigente en MYJCC"
+        }

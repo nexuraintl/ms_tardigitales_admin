@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 from app.services.tarjetas_service import TarjetasService
 from app.utils.image_utils import ImageUtils
 from app.schemas.tarjetas_schema import (
+    ActivacionMovilRequestSchema,
     TarjetaCreateSchema,
     ValidadorConfigSchema,
     BrandingCredentialsCreateSchema,
@@ -116,16 +117,19 @@ async def get_historial(
 
 @router.get("/validador-qr/get-config")
 async def get_validador_config(
+    tipo_tarjeta: str = Query("contadores", description="Tipo de tarjeta ('contadores' o 'sociedades')"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
 ):
-    return await service.get_validador_config(client_id)
+    return await service.get_validador_config(tipo_tarjeta, client_id)
 
 @router.post("/validador-qr/update-config")
 async def update_validador_config(
     data: ValidadorConfigSchema = Body(...),
+    tipo_tarjeta: Optional[str] = Query(None, description="Tipo de tarjeta ('contadores' o 'sociedades')"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
 ):
-    return await service.save_validador_config(data, client_id)
+    tipo = tipo_tarjeta or getattr(data, 'tipo_tarjeta', None) or "contadores"
+    return await service.save_validador_config(data, tipo, client_id)
 
 @router.get("/columns-config")
 async def get_columns_config(
@@ -144,7 +148,9 @@ async def create_branding_credentials(
     logo: Optional[UploadFile] = File(None),
     patron: Optional[UploadFile] = File(None),
     logo_impresion: Optional[UploadFile] = File(None),
+    logo_impresion_base64: Optional[str] = Form(None),
     patron_impresion: Optional[UploadFile] = File(None),
+    patron_impresion_base64: Optional[str] = Form(None),
     firma_director: Optional[UploadFile] = File(None),
     nombre_director: Optional[str] = Form(None),
     firma_director_base64: Optional[str] = Form(None),
@@ -157,8 +163,8 @@ async def create_branding_credentials(
 ):
     logo_base64 = await ImageUtils.upload_to_base64(logo)
     patron_base64 = await ImageUtils.upload_to_base64(patron)
-    logo_impresion_base64 = await ImageUtils.upload_to_base64(logo_impresion)
-    patron_impresion_base64 = await ImageUtils.upload_to_base64(patron_impresion)
+    logo_imp_b64 = await ImageUtils.upload_to_base64(logo_impresion) if logo_impresion else logo_impresion_base64
+    patron_imp_b64 = await ImageUtils.upload_to_base64(patron_impresion) if patron_impresion else patron_impresion_base64
     firma_base64 = await ImageUtils.upload_to_base64(firma_director) if firma_director else firma_director_base64
 
     data = BrandingCredentialsCreateSchema(
@@ -167,8 +173,8 @@ async def create_branding_credentials(
         version_publicada=version_publicada,
         logo=logo_base64,
         patron=patron_base64,
-        logo_impresion=logo_impresion_base64,
-        patron_impresion=patron_impresion_base64,
+        logo_impresion=logo_imp_b64,
+        patron_impresion=patron_imp_b64,
         color_fondo=color_fondo,
         color_letra=color_letra,
         color_letra_impresion=color_letra_impresion,
@@ -410,4 +416,21 @@ async def get_estado_lote(
         "lote": lote,
         "items": items
     }
-
+
+
+@router.post("/activar-movil", status_code=status.HTTP_200_OK)
+async def activar_tarjeta_movil(
+    payload: ActivacionMovilRequestSchema = Body(..., description="Parámetros de activación móvil desde el Wallet JCC"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+):
+    """
+    HU-JCC-014: Activación móvil de credencial digital desde la App Móvil / Wallet.
+    - Valida el hash SHA-256 de la tarjeta.
+    - Cambia el estado de 'Emitida' a 'Activa'.
+    - Registra el dispositivo y token FCM en la tabla satélite tn_tarjetavirtual_dispositivos.
+    - Registra la trazabilidad en el historial.
+    - Retorna los datos de la credencial y branding para renderizado en la App Móvil.
+    """
+    if client_id and not payload.client_id:
+        payload.client_id = client_id
+    return await service.activar_tarjeta_movil(payload)

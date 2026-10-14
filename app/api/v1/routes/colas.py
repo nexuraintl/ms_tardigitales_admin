@@ -291,3 +291,30 @@ async def get_sincronizacion_historial(
         "status": "success",
         "data": logs
     }
+
+
+# -----------------------------------------------------------------------------
+# 7. Disparador Manual de Sincronización Automática de Estados (HU-JCC-015)
+# -----------------------------------------------------------------------------
+@router.post("/sincronizar-estados")
+async def sincronizar_estados_manual(
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+):
+    """
+    HU-JCC-015: Encola en segundo plano un lote de validación de estados para todas
+    las credenciales activas/emitidas contra MYJCC para detectar sanciones o novedades.
+    """
+    cid = client_id or int(os.getenv("CLIENT_ID", "20001"))
+    try:
+        resumen = await scheduler_service.ejecutar_sincronizacion_estados(client_id=cid, origen="MANUAL")
+        return {
+            "status": "success",
+            "message": f"Sincronización de estados encolada exitosamente. Se crearon {len(resumen['lotes_creados'])} lote(s) con {resumen['total_encolados']} tarjeta(s) para revisión.",
+            "data": resumen
+        }
+    except Exception as exc:
+        logger.error(f"[Colas] Error al encolar sincronización de estados: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Fallo al encolar la sincronización de estados: {str(exc)}"
+        )

@@ -392,5 +392,64 @@ class SchedulerService:
         finally:
             self.ejecutando_ahora = False
 
+
+
+    async def ejecutar_sincronizacion_estados(
+        self,
+        client_id: Optional[int] = None,
+        origen: str = "PROGRAMADO"
+    ) -> Dict[str, Any]:
+        """
+        HU-JCC-015: Encola la sincronización y auditoría periódica de estados
+        para todas las credenciales Activas y Emitidas contra MYJCC.
+        """
+        cid = client_id or int(os.getenv("CLIENT_ID", "20001"))
+        logger.info(f"[SchedulerService] Iniciando barrido de sincronización de estados (origen={origen}, client_id={cid})...")
+
+        resumen = {
+            "fecha_ejecucion": datetime.now().isoformat(),
+            "origen": origen,
+            "contadores_encolados": 0,
+            "sociedades_encoladas": 0,
+            "total_encolados": 0,
+            "lotes_creados": []
+        }
+
+        # 1. Contadores activos/emitidos
+        contadores = await self.repository.get_active_or_emitted_tarjetas("contadores", cid)
+        docs_contadores = [str(c["documento_o_nit"]).strip() for c in contadores if c.get("documento_o_nit")]
+        if docs_contadores:
+            lote_id_c = await self.repository.create_emision_lote(
+                client_id=cid,
+                tipo_tarjeta="contadores",
+                tipo_tramite="sincronizacion_estados",
+                total_registros=len(docs_contadores),
+                archivo_nombre=f"SYNC_ESTADOS_CONTADORES_{origen.upper()}",
+                creado_por=f"Sistema ({origen})"
+            )
+            await self.repository.insert_emision_lote_items(lote_id=lote_id_c, documentos=docs_contadores, client_id=cid)
+            resumen["contadores_encolados"] = len(docs_contadores)
+            resumen["lotes_creados"].append({"lote_id": lote_id_c, "tipo": "contadores", "total": len(docs_contadores)})
+
+        # 2. Sociedades activas/emitidas
+        sociedades = await self.repository.get_active_or_emitted_tarjetas("sociedades", cid)
+        nits_sociedades = [str(s["documento_o_nit"]).strip() for s in sociedades if s.get("documento_o_nit")]
+        if nits_sociedades:
+            lote_id_s = await self.repository.create_emision_lote(
+                client_id=cid,
+                tipo_tarjeta="sociedades",
+                tipo_tramite="sincronizacion_estados",
+                total_registros=len(nits_sociedades),
+                archivo_nombre=f"SYNC_ESTADOS_SOCIEDADES_{origen.upper()}",
+                creado_por=f"Sistema ({origen})"
+            )
+            await self.repository.insert_emision_lote_items(lote_id=lote_id_s, documentos=nits_sociedades, client_id=cid)
+            resumen["sociedades_encoladas"] = len(nits_sociedades)
+            resumen["lotes_creados"].append({"lote_id": lote_id_s, "tipo": "sociedades", "total": len(nits_sociedades)})
+
+        resumen["total_encolados"] = resumen["contadores_encolados"] + resumen["sociedades_encoladas"]
+        logger.info(f"[SchedulerService] Sincronización de estados encolada: {resumen['total_encolados']} registros en total.")
+        return resumen
+
 # Instancia singleton para acceso y telemetría global
 scheduler_service = SchedulerService()
