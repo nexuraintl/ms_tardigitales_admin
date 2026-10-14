@@ -434,3 +434,21 @@ async def activar_tarjeta_movil(
     if client_id and not payload.client_id:
         payload.client_id = client_id
     return await service.activar_tarjeta_movil(payload)
+
+@router.get("/reportes/dashboard")
+async def get_reportes_dashboard(
+    fecha_desde: Optional[str] = Query(None, description="Fecha inicial YYYY-MM-DD"),
+    fecha_hasta: Optional[str] = Query(None, description="Fecha final YYYY-MM-DD"),
+    segmento: str = Query("all", description="all, accountants, companies"),
+    tipo_reporte: str = Query("general", description="general, cards, notifications"),
+    estado: Optional[str] = Query(None, description="Estado de filtro anidado"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+):
+    return await service.get_reportes_dashboard(
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
+        segmento=segmento,
+        tipo_reporte=tipo_reporte,
+        estado=estado,
+        client_id=client_id
+    )

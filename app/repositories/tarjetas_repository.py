@@ -2347,3 +2347,186 @@ class TarjetasRepository:
                 return True
         finally:
             conn.close()
+
+    async def get_reportes_dashboard(
+        self,
+        fecha_desde: Optional[str] = None,
+        fecha_hasta: Optional[str] = None,
+        segmento: str = "all",
+        tipo_reporte: str = "general",
+        estado: Optional[str] = None,
+        client_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                # 1. Contadores
+                where_cont = []
+                params_cont = []
+                if fecha_desde:
+                    where_cont.append("fecha_emision >= %s")
+                    params_cont.append(f"{fecha_desde} 00:00:00")
+                if fecha_hasta:
+                    where_cont.append("fecha_emision <= %s")
+                    params_cont.append(f"{fecha_hasta} 23:59:59")
+                if estado and estado != "all":
+                    where_cont.append("LOWER(estado) = %s")
+                    params_cont.append(estado.lower())
+
+                clause_cont = ("WHERE " + " AND ".join(where_cont)) if where_cont else ""
+                await cursor.execute(f"""
+                    SELECT 
+                        COUNT(*) as total,
+                        SUM(CASE WHEN LOWER(estado) = 'activa' THEN 1 ELSE 0 END) as activa,
+                        SUM(CASE WHEN LOWER(estado) = 'emitida' THEN 1 ELSE 0 END) as emitida,
+                        SUM(CASE WHEN LOWER(estado) = 'cancelada' THEN 1 ELSE 0 END) as cancelada,
+                        SUM(CASE WHEN LOWER(estado) = 'fallecido' THEN 1 ELSE 0 END) as fallecido,
+                        DATE_FORMAT(MAX(fecha_emision), '%%d/%%m/%%Y %%h:%%i %%p') as ultima_fecha
+                    FROM tn_tarjetavirtual_contadores
+                    {clause_cont}
+                """, tuple(params_cont))
+                cont = await cursor.fetchone() or {}
+
+                # 2. Sociedades
+                where_soc = []
+                params_soc = []
+                if fecha_desde:
+                    where_soc.append("fecha_emision >= %s")
+                    params_soc.append(f"{fecha_desde} 00:00:00")
+                if fecha_hasta:
+                    where_soc.append("fecha_emision <= %s")
+                    params_soc.append(f"{fecha_hasta} 23:59:59")
+                if estado and estado != "all":
+                    where_soc.append("LOWER(estado) = %s")
+                    params_soc.append(estado.lower())
+
+                clause_soc = ("WHERE " + " AND ".join(where_soc)) if where_soc else ""
+                await cursor.execute(f"""
+                    SELECT 
+                        COUNT(*) as total,
+                        SUM(CASE WHEN LOWER(estado) = 'activa' THEN 1 ELSE 0 END) as activa,
+                        SUM(CASE WHEN LOWER(estado) = 'emitida' THEN 1 ELSE 0 END) as emitida,
+                        SUM(CASE WHEN LOWER(estado) = 'cancelada' THEN 1 ELSE 0 END) as cancelada,
+                        DATE_FORMAT(MAX(fecha_emision), '%%d/%%m/%%Y %%h:%%i %%p') as ultima_fecha
+                    FROM tn_tarjetavirtual_sociedades
+                    {clause_soc}
+                """, tuple(params_soc))
+                soc = await cursor.fetchone() or {}
+
+                # 3. Notificaciones
+                where_notif = []
+                params_notif = []
+                if fecha_desde:
+                    where_notif.append("fecha_creacion >= %s")
+                    params_notif.append(f"{fecha_desde} 00:00:00")
+                if fecha_hasta:
+                    where_notif.append("fecha_creacion <= %s")
+                    params_notif.append(f"{fecha_hasta} 23:59:59")
+                if estado and estado != "all":
+                    where_notif.append("LOWER(estado) = %s")
+                    params_notif.append(estado.lower())
+
+                clause_notif = ("WHERE " + " AND ".join(where_notif)) if where_notif else ""
+                await cursor.execute(f"""
+                    SELECT 
+                        COUNT(*) as total,
+                        SUM(CASE WHEN LOWER(canal) = 'push' THEN 1 ELSE 0 END) as push,
+                        SUM(CASE WHEN LOWER(canal) LIKE '%%alerta%%' OR LOWER(canal) = 'estandar' THEN 1 ELSE 0 END) as estandar,
+                        SUM(CASE WHEN LOWER(canal) = 'interna' THEN 1 ELSE 0 END) as interna,
+                        SUM(CASE WHEN LOWER(estado) IN ('entregada', 'enviado', 'activa') THEN 1 ELSE 0 END) as entregada,
+                        SUM(CASE WHEN LOWER(estado) = 'programada' THEN 1 ELSE 0 END) as programada,
+                        SUM(CASE WHEN LOWER(estado) = 'fallida' THEN 1 ELSE 0 END) as fallida,
+                        DATE_FORMAT(MAX(fecha_creacion), '%%d/%%m/%%Y %%h:%%i %%p') as ultima_fecha
+                    FROM tn_tarjetavirtual_notificaciones
+                    {clause_notif}
+                """, tuple(params_notif))
+                notif = await cursor.fetchone() or {}
+
+                c_tot = int(cont.get("total") or 0)
+                s_tot = int(soc.get("total") or 0)
+                cards_total = c_tot + s_tot
+
+                # Filtrado por segmento
+                if segmento == "accountants":
+                    c_act = int(cont.get("activa") or 0)
+                    c_emi = int(cont.get("emitida") or 0)
+                    c_can = int(cont.get("cancelada") or 0)
+                    c_fal = int(cont.get("fallecido") or 0)
+                    total_segmento = c_tot
+                elif segmento == "companies":
+                    c_act = int(soc.get("activa") or 0)
+                    c_emi = int(soc.get("emitida") or 0)
+                    c_can = int(soc.get("cancelada") or 0)
+                    c_fal = 0
+                    total_segmento = s_tot
+                else:
+                    c_act = int(cont.get("activa") or 0) + int(soc.get("activa") or 0)
+                    c_emi = int(cont.get("emitida") or 0) + int(soc.get("emitida") or 0)
+                    c_can = int(cont.get("cancelada") or 0) + int(soc.get("cancelada") or 0)
+                    c_fal = int(cont.get("fallecido") or 0)
+                    total_segmento = cards_total
+
+                n_tot = int(notif.get("total") or 0)
+                n_push = int(notif.get("push") or 0)
+                n_est = int(notif.get("estandar") or 0)
+                n_int = int(notif.get("interna") or 0)
+                n_ent = int(notif.get("entregada") or 0)
+                n_noent = n_tot - n_ent
+
+                pct_cont = round((c_tot / cards_total * 100), 1) if cards_total > 0 else 0.0
+                pct_soc = round((s_tot / cards_total * 100), 1) if cards_total > 0 else 0.0
+
+                consolidado = [
+                    {
+                        "scope": "cards",
+                        "modulo": "Tarjetas digitales",
+                        "segmento": "Contadores",
+                        "total": c_tot,
+                        "activos": int(cont.get("activa") or 0),
+                        "emitidos": int(cont.get("emitida") or 0),
+                        "ultima_actualizacion": cont.get("ultima_fecha") or "Al día"
+                    },
+                    {
+                        "scope": "cards",
+                        "modulo": "Tarjetas digitales",
+                        "segmento": "Sociedades",
+                        "total": s_tot,
+                        "activos": int(soc.get("activa") or 0),
+                        "emitidos": int(soc.get("emitida") or 0),
+                        "ultima_actualizacion": soc.get("ultima_fecha") or "Al día"
+                    },
+                    {
+                        "scope": "notifications",
+                        "modulo": "Notificaciones",
+                        "segmento": "Todos",
+                        "total": n_tot,
+                        "activos": n_ent,
+                        "emitidos": n_noent,
+                        "ultima_actualizacion": notif.get("ultima_fecha") or "Al día"
+                    }
+                ]
+
+                return {
+                    "cards": {
+                        "total": total_segmento,
+                        "activa": c_act,
+                        "emitida": c_emi,
+                        "cancelada": c_can,
+                        "fallecido": c_fal,
+                        "contadores_total": c_tot,
+                        "contadores_pct": pct_cont,
+                        "sociedades_total": s_tot,
+                        "sociedades_pct": pct_soc
+                    },
+                    "notifications": {
+                        "total": n_tot,
+                        "push": n_push,
+                        "estandar": n_est,
+                        "interna": n_int,
+                        "entregada": n_ent,
+                        "no_entregada": n_noent
+                    },
+                    "consolidado": consolidado
+                }
+        finally:
+            conn.close()
