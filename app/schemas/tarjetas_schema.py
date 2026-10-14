@@ -34,12 +34,28 @@ class TarjetaCreateSchema(BaseModel):
     fecha: Optional[str] = None
 
 class ValidadorConfigSchema(BaseModel):
-    val_foto: Optional[bool] = True
-    val_nombres: Optional[bool] = True
-    val_matricula: Optional[bool] = True
-    val_numero_identificacion: Optional[bool] = True
-    val_codigo_tarjeta: Optional[bool] = True
+    tipo_tarjeta: Optional[str] = "contadores"
+    # Campos Contadores
+    val_tarjeta_profesional: Optional[bool] = True
+    val_fecha_resolucion: Optional[bool] = True
+    val_resolucion: Optional[bool] = True
+    val_nombre: Optional[bool] = True
+    val_cedula: Optional[bool] = True
+    val_institucion: Optional[bool] = True
+    val_expediente: Optional[bool] = True
     val_estado: Optional[bool] = True
+    # Campos Sociedades
+    val_numero_registro: Optional[bool] = True
+    val_razon_social: Optional[bool] = True
+    val_nit: Optional[bool] = True
+    val_tipo_registro: Optional[bool] = True
+    # Comunes / Técnicos
+    val_codigo_tarjeta: Optional[bool] = True
+    val_foto: Optional[bool] = True
+    # Alias para compatibilidad
+    val_nombres: Optional[bool] = None
+    val_matricula: Optional[bool] = None
+    val_numero_identificacion: Optional[bool] = None
 
 class ConsultaMatriculaResponseSchema(BaseModel):
     disponibles: list[Dict[str, Any]] = []
@@ -165,3 +181,13 @@ class InstitucionalConfigUpdateSchema(BaseModel):
     firma_director: Optional[str] = Field(None, description="Firma en Base64")
     publicado: Optional[bool] = Field(None, description="Estado de publicación")
 
+
+
+class ActivacionMovilRequestSchema(BaseModel):
+    token: str = Field(..., description="Token o hash SHA-256 de la credencial digital (escaneado del código QR)")
+    client_id: Optional[int] = Field(20001, description="ID de la entidad cliente (default 20001)")
+    fcm_token: Optional[str] = Field(None, description="Registration token de Firebase Cloud Messaging del dispositivo para notificaciones push")
+    device_id: Optional[str] = Field(None, description="Identificador único del dispositivo físico (UUID, Android ID, IDFV)")
+    device_os: Optional[str] = Field(None, description="Plataforma del dispositivo: 'android' o 'ios'")
+    device_modelo: Optional[str] = Field(None, description="Modelo del hardware (ej. 'Samsung Galaxy S23', 'iPhone 15 Pro')")
+    app_version: Optional[str] = Field(None, description="Versión de la aplicación móvil instalada (ej. '1.0.0')")

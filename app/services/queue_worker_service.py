@@ -89,8 +89,14 @@ class QueueWorkerService:
                     # Reclamar ítem para evitar procesamiento duplicado
                     await self.repository.claim_queue_item(item_id=item_id, lote_id=lote_id, client_id=cid)
 
-                    # Procesar emisión a través del motor unificado
-                    if tipo_tarjeta == "sociedades":
+                    # Procesar emisión o sincronización de estados a través del motor unificado
+                    if tipo_tramite == "sincronizacion_estados":
+                        res = await self.engine.sincronizar_estado_tarjeta_individual(
+                            documento_o_nit=doc,
+                            tipo_tarjeta=tipo_tarjeta,
+                            client_id=cid
+                        )
+                    elif tipo_tarjeta == "sociedades":
                         res = await self.engine.emitir_sociedad_individual(
                             nit=doc,
                             tipo_tramite=tipo_tramite,
