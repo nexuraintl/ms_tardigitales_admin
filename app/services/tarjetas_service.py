@@ -940,3 +940,31 @@ class TarjetasService:
                 }
             }
         }
+
+    async def get_reportes_dashboard(
+        self,
+        fecha_desde: Optional[str] = None,
+        fecha_hasta: Optional[str] = None,
+        segmento: str = "all",
+        tipo_reporte: str = "general",
+        estado: Optional[str] = None,
+        client_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        try:
+            return await self.repository.get_reportes_dashboard(
+                fecha_desde=fecha_desde,
+                fecha_hasta=fecha_hasta,
+                segmento=segmento,
+                tipo_reporte=tipo_reporte,
+                estado=estado,
+                client_id=client_id
+            )
+        except Exception as e:
+            print(f"[TarjetasService] Error al obtener datos del reporte dashboard: {e}")
+            raise PipelineException(
+                etapa="REPORTES_DASHBOARD",
+                mensaje="No fue posible obtener las métricas del reporte dashboard.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
