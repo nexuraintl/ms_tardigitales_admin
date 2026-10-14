@@ -1835,6 +1835,33 @@ class TarjetasRepository:
         finally:
             conn.close()
 
+    async def recover_stuck_queue_items(
+        self,
+        timeout_minutes: int = 5,
+        client_id: Optional[int] = None
+    ) -> int:
+        """
+        Recupera items que hayan quedado atrapados en estado PROCESANDO por caidas
+        o reinicios del worker, regresandolos a PENDIENTE para su reintento ordenado.
+        """
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    UPDATE tn_tarjetavirtual_emision_lote_items
+                    SET resultado = 'PENDIENTE'
+                    WHERE resultado = 'PROCESANDO'
+                      AND (fecha_proceso IS NULL OR fecha_proceso < DATE_SUB(NOW(), INTERVAL %s MINUTE))
+                    """,
+                    (timeout_minutes,)
+                )
+                affected = cursor.rowcount
+                await conn.commit()
+                return affected
+        finally:
+            conn.close()
+
     async def claim_queue_item(
         self,
         item_id: int,
@@ -1917,7 +1944,7 @@ class TarjetasRepository:
                     exitosos = lote["exitosos"] if lote else 0
                     duplicados = lote["duplicados"] if lote else 0
                     fallidos = lote["fallidos"] if lote else 0
-                    estado_final = "FINALIZADO" if (exitosos > 0 or duplicados > 0) else "FALLIDO"
+                    estado_final = "FINALIZADO" if (fallidos == 0 or exitosos > 0 or duplicados > 0) else "FALLIDO"
                     msg = f"Lote completado: {exitosos} emitidos, {duplicados} omitidos por duplicado, {fallidos} no procesados o fallidos."
                     await cursor.execute(
                         """
@@ -1930,6 +1957,30 @@ class TarjetasRepository:
                     await conn.commit()
                     return estado_final
                 return None
+        finally:
+            conn.close()
+
+    async def finalize_uncompleted_lotes_if_ready(self, client_id: Optional[int] = None) -> list:
+        """
+        Revisa todos los lotes que permanezcan en PROCESANDO y los finaliza si ya no
+        cuentan con items pendientes o en proceso.
+        """
+        conn = await get_client_connection(client_id)
+        finalizados = []
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    """
+                    SELECT id FROM tn_tarjetavirtual_emision_lotes
+                    WHERE estado = 'PROCESANDO'
+                    """
+                )
+                lotes = await cursor.fetchall()
+                for l in lotes:
+                    res = await self.finalize_lote_if_completed(lote_id=l["id"], client_id=client_id)
+                    if res:
+                        finalizados.append(l["id"])
+            return finalizados
         finally:
             conn.close()
 
@@ -2298,11 +2349,13 @@ class TarjetasRepository:
                         FROM {tabla} 
                         WHERE {doc_col} = %s 
                            OR REPLACE({doc_col}, '-', '') = %s 
-                           OR {doc_col} LIKE CONCAT(%s, '-%')
-                           OR {doc_col} LIKE CONCAT(%s, '%')
+                           OR {doc_col} LIKE %s
+                           OR {doc_col} LIKE %s
                         LIMIT 1
                     """
-                    await cursor.execute(query, (documento_o_nit, doc_limpio, doc_raiz, doc_raiz))
+                    patron_guion = f"{doc_raiz}-%"
+                    patron_raiz = f"{doc_raiz}%"
+                    await cursor.execute(query, (documento_o_nit, doc_limpio, patron_guion, patron_raiz))
                 else:
                     query = f"SELECT id, {doc_col} AS documento_o_nit, {reg_col} AS matricula_o_inscripcion, estado FROM {tabla} WHERE {doc_col} = %s LIMIT 1"
                     await cursor.execute(query, (doc_limpio,))
@@ -2323,10 +2376,16 @@ class TarjetasRepository:
         conn = await get_client_connection(client_id)
         try:
             async with conn.cursor() as cursor:
-                await cursor.execute(
-                    f"UPDATE {tabla} SET estado = %s, fecha_estado = NOW() WHERE id = %s",
-                    (nuevo_estado, tarjeta_id)
-                )
+                if tipo_tarjeta == "sociedades":
+                    await cursor.execute(
+                        f"UPDATE {tabla} SET estado = %s, updated_at = NOW() WHERE id = %s",
+                        (nuevo_estado, tarjeta_id)
+                    )
+                else:
+                    await cursor.execute(
+                        f"UPDATE {tabla} SET estado = %s, fecha_estado = NOW() WHERE id = %s",
+                        (nuevo_estado, tarjeta_id)
+                    )
                 desc = f"Novedad detectada en MYJCC: {novedad_jcc}"
                 if resolucion:
                     desc += f" (Resolución: {resolucion})"
