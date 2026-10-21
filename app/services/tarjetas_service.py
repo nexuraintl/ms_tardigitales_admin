@@ -1,6 +1,6 @@
 import time
 import base64
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from fastapi import HTTPException, UploadFile, status
 from datetime import datetime
 from app.repositories.tarjetas_repository import TarjetasRepository
@@ -172,6 +172,78 @@ class TarjetasService:
                 cliente_id=client_id,
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    async def generar_pdf_tarjeta(
+        self,
+        tarjeta_id: int,
+        tipo_tarjeta: Optional[str] = None,
+        client_id: Optional[int] = None
+    ) -> Tuple[bytes, str]:
+        tarjeta = await self.get_tarjeta(tarjeta_id, tipo_tarjeta, client_id)
+        is_sociedad = bool(tarjeta.get("nit") or (tipo_tarjeta and tipo_tarjeta.lower() in ["sociedades", "sociedad"]))
+        tipo_str = "sociedades" if is_sociedad else "contadores"
+
+        try:
+            branding = await self.get_branding_public(tipo=tipo_str, client_id=client_id)
+        except Exception as e_br:
+            print(f"[TarjetasService] Advertencia obteniendo branding para PDF: {e_br}")
+            branding = None
+
+        datos_combinados = dict(tarjeta)
+        datos_combinados["tipo_tarjeta"] = tipo_str
+        if branding:
+            b_data = branding.get("data") if (isinstance(branding, dict) and "data" in branding) else branding
+            for k in ["patron", "patron_impresion", "logo", "logo_impresion", "color_fondo", "color_letra", "color_letra_impresion", "nombre_director", "cargo_director", "firma_director"]:
+                if b_data.get(k) and not datos_combinados.get(k):
+                    datos_combinados[k] = b_data[k]
+            if False:
+                if branding.get(k) and not datos_combinados.get(k):
+                    datos_combinados[k] = branding[k]
+
+        from app.services.pdf_generator_service import PdfGeneratorService
+        pdf_bytes = PdfGeneratorService.generar_pdf_tarjeta(datos_combinados)
+
+        prefijo = "sociedad" if is_sociedad else "contador"
+        id_val = tarjeta.get("nit") or tarjeta.get("inscripcion") if is_sociedad else tarjeta.get("no_tarjeta") or tarjeta.get("no_documento") or tarjeta_id
+        clean_id = "".join(c for c in str(id_val) if c.isalnum() or c in ("-", "_"))
+        filename = f"tarjeta_{prefijo}_{clean_id}.pdf"
+        return pdf_bytes, filename
+
+    async def generar_pdf_tarjeta_by_hash(
+        self,
+        hash_sha256: str,
+        tipo_tarjeta: Optional[str] = None,
+        client_id: Optional[int] = None
+    ) -> Tuple[bytes, str]:
+        tarjeta = await self.get_tarjeta_by_hash(hash_sha256, tipo_tarjeta, client_id)
+        is_sociedad = bool(tarjeta.get("nit") or (tipo_tarjeta and tipo_tarjeta.lower() in ["sociedades", "sociedad"]))
+        tipo_str = "sociedades" if is_sociedad else "contadores"
+
+        try:
+            branding = await self.get_branding_public(tipo=tipo_str, client_id=client_id)
+        except Exception as e_br:
+            print(f"[TarjetasService] Advertencia obteniendo branding para PDF: {e_br}")
+            branding = None
+
+        datos_combinados = dict(tarjeta)
+        datos_combinados["tipo_tarjeta"] = tipo_str
+        if branding:
+            b_data = branding.get("data") if (isinstance(branding, dict) and "data" in branding) else branding
+            for k in ["patron", "patron_impresion", "logo", "logo_impresion", "color_fondo", "color_letra", "color_letra_impresion", "nombre_director", "cargo_director", "firma_director"]:
+                if b_data.get(k) and not datos_combinados.get(k):
+                    datos_combinados[k] = b_data[k]
+            if False:
+                if branding.get(k) and not datos_combinados.get(k):
+                    datos_combinados[k] = branding[k]
+
+        from app.services.pdf_generator_service import PdfGeneratorService
+        pdf_bytes = PdfGeneratorService.generar_pdf_tarjeta(datos_combinados)
+
+        prefijo = "sociedad" if is_sociedad else "contador"
+        id_val = tarjeta.get("nit") or tarjeta.get("inscripcion") if is_sociedad else tarjeta.get("no_tarjeta") or tarjeta.get("no_documento") or "cert"
+        clean_id = "".join(c for c in str(id_val) if c.isalnum() or c in ("-", "_"))
+        filename = f"tarjeta_{prefijo}_{clean_id}.pdf"
+        return pdf_bytes, filename
 
     async def create_tarjeta_contador(
         self,
