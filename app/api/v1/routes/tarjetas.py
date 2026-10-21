@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, HTTPException, Path, Body, Form, File, UploadFile, BackgroundTasks, status
+from fastapi import APIRouter, Response, Query, HTTPException, Path, Body, Form, File, UploadFile, BackgroundTasks, status
 from typing import List, Dict, Any, Optional
 from app.services.tarjetas_service import TarjetasService
 from app.utils.image_utils import ImageUtils
@@ -98,6 +98,50 @@ async def verificar_tarjeta_query(
             detail="Debe suministrar el parámetro 'token' o 'hash' de la tarjeta a verificar."
         )
     return await service.get_tarjeta_by_hash(target_hash, tipo_tarjeta, client_id)
+
+
+@router.get("/pdf/{id}")
+@router.get("/get/{id}/pdf")
+async def export_tarjeta_pdf(
+    id: int = Path(..., description="ID de la tarjeta"),
+    tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    download: bool = Query(True, description="Si es True fuerza la descarga como attachment")
+):
+    pdf_bytes, filename = await service.generar_pdf_tarjeta(id, tipo_tarjeta, client_id)
+    disposition = "attachment" if download else "inline"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'{disposition}; filename="{filename}"',
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
+
+
+@router.get("/verificar/{hash}/pdf")
+@router.get("/get-by-hash/{hash}/pdf")
+async def export_tarjeta_pdf_by_hash(
+    hash: str = Path(..., min_length=10, max_length=64, description="Hash SHA-256 canónico de la tarjeta"),
+    tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    download: bool = Query(True, description="Si es True fuerza la descarga como attachment")
+):
+    pdf_bytes, filename = await service.generar_pdf_tarjeta_by_hash(hash, tipo_tarjeta, client_id)
+    disposition = "attachment" if download else "inline"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'{disposition}; filename="{filename}"',
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
 
 
 @router.post("/create")
