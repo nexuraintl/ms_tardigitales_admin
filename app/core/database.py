@@ -95,7 +95,8 @@ async def get_client_connection(client_id: int | None = None):
             user=config["usuario"],
             password=config["contrasena"],
             db=db_name,
-            autocommit=True
+            autocommit=True,
+            connect_timeout=10
         )
         return connection
     except Exception as e:
