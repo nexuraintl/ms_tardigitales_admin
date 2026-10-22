@@ -393,6 +393,8 @@ async def emision_masiva(
     # 2. Despacho: si el QueueWorker continuo está activo, el lote queda encolado para el Worker
     reg_label = f"{len(docs)} registro" if len(docs) == 1 else f"{len(docs)} registros"
     if queue_config.WORKER_ENABLED:
+        from app.services.queue_worker_service import queue_worker
+        queue_worker.despertar()
         return {
             "status": "accepted",
             "asincrono": True,

@@ -18,6 +18,7 @@ async def get_mysql_connection():
         user=DB1_USER,
         password=DB1_PASS,
         db=DB1_NAME,
-        autocommit=True
+        autocommit=True,
+        connect_timeout=10
     )
     return connection

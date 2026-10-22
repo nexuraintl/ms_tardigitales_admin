@@ -122,13 +122,42 @@ async def _iniciar_tarea_programada_recurrente():
 
         await asyncio.sleep(queue_config.SCHEDULER_INTERVAL_SECONDS)
 
+# Watchdog supervisor: garantiza auto-recuperación de las tareas en segundo plano
+async def _supervisor_background_tasks():
+    import asyncio
+    await asyncio.sleep(30)
+    while True:
+        try:
+            from app.config.queue_config import queue_config
+            from app.services.queue_worker_service import queue_worker
+            from app.core.task_tracker import is_task_alive, create_tracked_task
+
+            # 1. Supervisar QueueWorker
+            if queue_config.WORKER_ENABLED:
+                if not is_task_alive("queue_worker") or not queue_worker.running:
+                    print("[Supervisor] Detectada inactividad o caída del QueueWorker. Reactivando automáticamente...")
+                    queue_worker.detener_worker()
+                    await asyncio.sleep(1)
+                    create_tracked_task(_iniciar_queue_worker(), name="queue_worker")
+
+            # 2. Supervisar Scheduler
+            if queue_config.SCHEDULER_ENABLED:
+                if not is_task_alive("scheduler_recurrente"):
+                    print("[Supervisor] Detectada inactividad del Scheduler. Reactivando...")
+                    create_tracked_task(_iniciar_tarea_programada_recurrente(), name="scheduler_recurrente")
+
+        except Exception as e:
+            print(f"[Supervisor] Error en ciclo de supervisión: {e}")
+
+        await asyncio.sleep(30)
+
 @app.on_event("startup")
 async def startup_event():
-    import asyncio
     import os
     from app.config.queue_config import queue_config
     from app.constants import DEFAULT_CLIENT_ID
     from app.repositories.tarjetas_repository import TarjetasRepository
+    from app.core.task_tracker import create_tracked_task
 
     # 1. Cargar configuración dinámica de colas y worker desde la Base de Datos
     try:
@@ -141,9 +170,10 @@ async def startup_event():
     except Exception as e:
         print(f"[Config] Usando configuración por defecto de colas en memoria ({e})")
 
-    # 2. Iniciar tareas en segundo plano
-    asyncio.create_task(_iniciar_queue_worker())
-    asyncio.create_task(_iniciar_tarea_programada_recurrente())
+    # 2. Iniciar tareas en segundo plano protegidas contra recolección de basura
+    create_tracked_task(_iniciar_queue_worker(), name="queue_worker")
+    create_tracked_task(_iniciar_tarea_programada_recurrente(), name="scheduler_recurrente")
+    create_tracked_task(_supervisor_background_tasks(), name="task_supervisor")
 
 # Ruta informativa raíz
 @app.get("/", include_in_schema=False)
