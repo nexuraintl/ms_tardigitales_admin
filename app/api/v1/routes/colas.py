@@ -167,14 +167,14 @@ async def update_configuracion(
     """
     Actualiza dinámicamente en MySQL los parámetros de colas, tandas, tiempos y Circuit Breaker.
     """
-    import asyncio
     cid = client_id or int(os.getenv("CLIENT_ID", "20001"))
     nueva_config = await repo.save_queue_config(cid, config_data)
     queue_config.load_from_db(nueva_config)
 
     # Si se habilitó el worker y el hilo en memoria no estaba corriendo, auto-reactivar en caliente
     if queue_config.WORKER_ENABLED and not queue_worker.running:
-        asyncio.create_task(queue_worker.iniciar_worker())
+        from app.core.task_tracker import create_tracked_task
+        create_tracked_task(queue_worker.iniciar_worker(), name="queue_worker")
 
     return {
         "status": "success",
@@ -191,6 +191,7 @@ async def reiniciar_worker_en_caliente(
     sin requerir acceso SSH ni reiniciar el contenedor Docker en el servidor.
     """
     import asyncio
+    from app.core.task_tracker import create_tracked_task
     cid = client_id or int(os.getenv("CLIENT_ID", "20001"))
 
     # 1. Cargar configuración fresca de base de datos
@@ -204,8 +205,8 @@ async def reiniciar_worker_en_caliente(
     queue_worker._consecutive_network_errors = 0
     await asyncio.sleep(0.5)
 
-    # 3. Lanzar nuevo hilo de ejecución
-    asyncio.create_task(queue_worker.iniciar_worker())
+    # 3. Lanzar nuevo hilo de ejecución persistente
+    create_tracked_task(queue_worker.iniciar_worker(), name="queue_worker")
 
     return {
         "status": "success",
