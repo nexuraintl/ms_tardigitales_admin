@@ -80,8 +80,9 @@ async def get_tarjeta_by_hash(
     hash: str = Path(..., min_length=10, max_length=64, description="Hash SHA-256 canónico de la tarjeta"),
     tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    sanitizar: bool = Query(True, description="Si es True, aplica los filtros de visibilidad del validador QR"),
 ):
-    return await service.get_tarjeta_by_hash(hash, tipo_tarjeta, client_id)
+    return await service.get_tarjeta_by_hash(hash, tipo_tarjeta, client_id, sanitizar=sanitizar)
 
 
 @router.get("/verificar")
@@ -90,6 +91,7 @@ async def verificar_tarjeta_query(
     hash: Optional[str] = Query(None, description="Hash SHA-256 alternativo de la tarjeta"),
     tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    sanitizar: bool = Query(True, description="Si es True, aplica los filtros de visibilidad del validador QR"),
 ):
     target_hash = token or hash
     if not target_hash:
@@ -97,7 +99,7 @@ async def verificar_tarjeta_query(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Debe suministrar el parámetro 'token' o 'hash' de la tarjeta a verificar."
         )
-    return await service.get_tarjeta_by_hash(target_hash, tipo_tarjeta, client_id)
+    return await service.get_tarjeta_by_hash(target_hash, tipo_tarjeta, client_id, sanitizar=sanitizar)
 
 
 @router.get("/pdf/{id}")
