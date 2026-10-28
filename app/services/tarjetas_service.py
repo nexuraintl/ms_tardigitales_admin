@@ -648,6 +648,7 @@ class TarjetasService:
                 "color_letra_impresion": color_letra_impresion_val,
                 "nombre_director": nombre_director_val,
                 "firma_director": firma_director_val,
+                "observacion": data.observacion.strip() if data.observacion else None,
                 "usuario_creacion_id": data.usuario_creacion_id,
                 "tipo_id": data.tipo_id,
             }
@@ -671,6 +672,15 @@ class TarjetasService:
 
     async def update_branding_credentials_change_version(self, branding_credential_id: int, data: BrandingCredentialsUpdateSchema, client_id: Optional[int] = None) -> Dict[str, Any]:
         try:
+            observacion_limpia = (data.observacion or "").strip()
+            if not observacion_limpia:
+                raise PipelineException(
+                    etapa="BRANDING_CREDENTIALS",
+                    mensaje="La observación o justificación es obligatoria para publicar una versión de branding.",
+                    cliente_id=client_id,
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+
             existing = await self.repository.get_by_id_branding_credencials(branding_credential_id, client_id)
             if not existing:
                 raise PipelineException(
@@ -680,9 +690,11 @@ class TarjetasService:
                     status_code=status.HTTP_404_NOT_FOUND
                 )
             
+            payload = data.dict(exclude_none=True)
+            payload["observacion"] = observacion_limpia
             await self.repository.update_branding_credentials_change_version(
                 branding_credential_id,
-                data.dict(exclude_none=True), 
+                payload, 
                 client_id
             )
                         
@@ -870,6 +882,7 @@ class TarjetasService:
                     "patron": result.get("patron"),
                     "logo_impresion": result.get("logo_impresion"),
                     "patron_impresion": result.get("patron_impresion"),
+                    "observacion": result.get("observacion"),
                     "created_at": result.get("created_at_formatted")
                 }
             }
@@ -897,6 +910,7 @@ class TarjetasService:
                     "firma_director": None,
                     "version": 1,
                     "publicado": 1,
+                    "observacion": None,
                     "created_at_formatted": None
                 }
             return {
@@ -965,14 +979,26 @@ class TarjetasService:
     async def publish_institucional_version(
         self,
         version_id: int,
-        client_id: Optional[int] = None
+        client_id: Optional[int] = None,
+        observacion: Optional[str] = None
     ) -> Dict[str, Any]:
         try:
-            await self.repository.publish_institucional_version(version_id, client_id)
+            observacion_limpia = (observacion or "").strip()
+            if not observacion_limpia:
+                raise PipelineException(
+                    etapa="BRANDING_INSTITUCIONAL",
+                    mensaje="La observación o justificación es obligatoria para publicar la configuración institucional.",
+                    cliente_id=client_id,
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+
+            await self.repository.publish_institucional_version(version_id, client_id, observacion=observacion_limpia)
             return {
                 "status": "success",
                 "message": f"Versión institucional {version_id} publicada exitosamente."
             }
+        except PipelineException:
+            raise
         except Exception as e:
             print(f"[TarjetasService] Error al publicar versión institucional: {e}")
             raise PipelineException(

@@ -76,11 +76,13 @@ class BrandingCredentialsCreateSchema(BaseModel):
     color_letra_impresion: Optional[str] = Field("#0f172a", description="Color de letra para versión impresión")
     nombre_director: Optional[str] = Field(None, description="Nombre completo del director")
     firma_director: Optional[str] = Field(None, description="Firma del director (base64 string)")
+    observacion: Optional[str] = Field(None, description="Observación o justificación de la versión/publicación")
     usuario_creacion_id: int = Field(..., description="ID del usuario creador")
     tipo_id: int = Field(..., description="ID del tipo es requerido")
 
 class BrandingCredentialsUpdateSchema(BaseModel):
     version_publicada: Optional[int] = None
+    observacion: Optional[str] = Field(None, description="Observación o justificación de la publicación")
     logo: Optional[str] = None
     patron: Optional[str] = None
     logo_impresion: Optional[str] = None
@@ -92,13 +94,20 @@ class BrandingCredentialsUpdateSchema(BaseModel):
     firma_director: Optional[str] = None
 
 class InstitucionalConfigCreateSchema(BaseModel):
-    nombre_director: str = Field(..., description="Nombre completo del Director General")
-    cargo_director: str = Field("DIRECTOR GENERAL", description="Cargo oficial del firmante")
-    firma_director: Optional[str] = Field(None, description="Firma en Base64")
+    nombre_director: str = Field(..., description="Nombre completo del Director General de la JCC")
+    cargo_director: Optional[str] = Field("DIRECTOR GENERAL", description="Cargo oficial institucional")
+    firma_director: Optional[str] = Field(None, description="Imagen en formato Base64 o data URI de la firma oficial")
+    publicado: Optional[bool] = Field(False, description="Indica si entra en vigencia de inmediato")
+    observacion: Optional[str] = Field(None, description="Observación o justificación de la versión/publicación")
     usuario_creacion_id: Optional[int] = Field(141, description="ID del usuario creador")
 
 class InstitucionalConfigUpdateSchema(BaseModel):
-    version_publicada: int = Field(..., description="ID o versión a publicar")
+    version_publicada: Optional[int] = Field(None, description="ID o versión a publicar")
+    observacion: Optional[str] = Field(None, description="Observación o justificación de la publicación")
+    nombre_director: Optional[str] = Field(None, description="Nombre completo del Director General")
+    cargo_director: Optional[str] = Field(None, description="Cargo oficial institucional")
+    firma_director: Optional[str] = Field(None, description="Firma en Base64")
+    publicado: Optional[bool] = Field(None, description="Estado de publicación")
 
 class AuditoriaApiCreateSchema(BaseModel):
     client_id: int = Field(..., description="ID del cliente asociado a la operación")
@@ -167,21 +176,6 @@ class EmisionMasivaRequestSchema(BaseModel):
     archivo_nombre: Optional[str] = Field(None, description="Nombre del archivo fuente CSV")
     asincrono: Optional[bool] = Field(False, description="Forzar procesamiento asíncrono en segundo plano")
     creado_por: Optional[str] = Field("Administrador", description="Usuario administrativo que realiza la carga")
-
-class InstitucionalConfigCreateSchema(BaseModel):
-    nombre_director: str = Field(..., description="Nombre completo del Director General de la JCC")
-    cargo_director: Optional[str] = Field("DIRECTOR GENERAL", description="Cargo oficial institucional")
-    firma_director: str = Field(..., description="Imagen en formato Base64 o data URI de la firma oficial")
-    publicado: Optional[bool] = Field(True, description="Indica si entra en vigencia de inmediato")
-    usuario_creacion_id: Optional[int] = Field(None, description="ID del usuario que realiza la modificación")
-
-class InstitucionalConfigUpdateSchema(BaseModel):
-    nombre_director: Optional[str] = Field(None, description="Nombre completo del Director General")
-    cargo_director: Optional[str] = Field(None, description="Cargo oficial institucional")
-    firma_director: Optional[str] = Field(None, description="Firma en Base64")
-    publicado: Optional[bool] = Field(None, description="Estado de publicación")
-
-
 
 class ActivacionMovilRequestSchema(BaseModel):
     token: str = Field(..., description="Token o hash SHA-256 de la credencial digital (escaneado del código QR)")
