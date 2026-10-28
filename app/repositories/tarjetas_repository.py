@@ -82,7 +82,8 @@ class TarjetasRepository:
                         "resolucion": "ttc.resolucion",
                         "acta_jcc": "ttc.acta_jcc",
                         "correo": "ttc.correo",
-                        "fecha_emision": "ttc.fecha_emision"
+                        "fecha_emision": "ttc.fecha_emision",
+                        "fecha_activacion": "fecha_activacion"
                     }
                     
                     # Condiciones WHERE dinámicas
@@ -136,7 +137,8 @@ class TarjetasRepository:
                         "inscripcion": "tts.inscripcion",
                         "resolucion": "tts.resolucion",
                         "acta_jcc": "tts.acta_jcc",
-                        "fecha_emision": "tts.fecha_emision"
+                        "fecha_emision": "tts.fecha_emision",
+                        "fecha_activacion": "fecha_activacion"
                     }
                     
                     conditions = ["1=1"]
@@ -212,7 +214,12 @@ class TarjetasRepository:
                             DATE_FORMAT(ttc.fecha_grado, '%%Y-%%m-%%d') AS fecha_grado,
                             ttc.seccional,
                             ttc.foto,
-                            ttc.hash_sha256
+                            ttc.hash_sha256,
+                            COALESCE(
+                                (SELECT DATE_FORMAT(h.fecha, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial h WHERE h.tarjeta_id = ttc.id AND h.estado = 'Activa' ORDER BY h.id DESC LIMIT 1),
+                                (SELECT DATE_FORMAT(d.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_dispositivos d WHERE d.tarjeta_id = ttc.id AND d.tipo_tarjeta = 'contadores' ORDER BY d.id DESC LIMIT 1),
+                                CASE WHEN ttc.estado = 'Activa' THEN DATE_FORMAT(ttc.fecha_estado, '%%Y-%%m-%%d %%H:%%i:%%s') ELSE NULL END
+                            ) AS fecha_activacion
                     """
                 else:
                     select_fields = """
@@ -235,7 +242,12 @@ class TarjetasRepository:
                             tts.tipo_solicitud,
                             tts.representante_legal,
                             tts.foto,
-                            tts.hash_sha256
+                            tts.hash_sha256,
+                            COALESCE(
+                                (SELECT DATE_FORMAT(h.fecha, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial h WHERE h.tarjeta_id = tts.id AND h.estado = 'Activa' ORDER BY h.id DESC LIMIT 1),
+                                (SELECT DATE_FORMAT(d.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_dispositivos d WHERE d.tarjeta_id = tts.id AND d.tipo_tarjeta = 'sociedades' ORDER BY d.id DESC LIMIT 1),
+                                CASE WHEN tts.estado = 'Activa' THEN DATE_FORMAT(tts.fecha_estado, '%%Y-%%m-%%d %%H:%%i:%%s') ELSE NULL END
+                            ) AS fecha_activacion
                     """
 
                 data_query = f"""
@@ -289,7 +301,12 @@ class TarjetasRepository:
             DATE_FORMAT(ttc.fecha_grado, '%%Y-%%m-%%d') AS fecha_grado,
             ttc.seccional,
             ttc.foto,
-            ttc.hash_sha256
+            ttc.hash_sha256,
+            COALESCE(
+                (SELECT DATE_FORMAT(h.fecha, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial h WHERE h.tarjeta_id = ttc.id AND h.estado = 'Activa' ORDER BY h.id DESC LIMIT 1),
+                (SELECT DATE_FORMAT(d.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_dispositivos d WHERE d.tarjeta_id = ttc.id AND d.tipo_tarjeta = 'contadores' ORDER BY d.id DESC LIMIT 1),
+                CASE WHEN ttc.estado = 'Activa' THEN DATE_FORMAT(ttc.fecha_estado, '%%Y-%%m-%%d %%H:%%i:%%s') ELSE NULL END
+            ) AS fecha_activacion
         FROM tn_tarjetavirtual_contadores ttc
     """
 
@@ -313,7 +330,12 @@ class TarjetasRepository:
             tts.tipo_solicitud,
             tts.representante_legal,
             tts.foto,
-            tts.hash_sha256
+            tts.hash_sha256,
+            COALESCE(
+                (SELECT DATE_FORMAT(h.fecha, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial h WHERE h.tarjeta_id = tts.id AND h.estado = 'Activa' ORDER BY h.id DESC LIMIT 1),
+                (SELECT DATE_FORMAT(d.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_dispositivos d WHERE d.tarjeta_id = tts.id AND d.tipo_tarjeta = 'sociedades' ORDER BY d.id DESC LIMIT 1),
+                CASE WHEN tts.estado = 'Activa' THEN DATE_FORMAT(tts.fecha_estado, '%%Y-%%m-%%d %%H:%%i:%%s') ELSE NULL END
+            ) AS fecha_activacion
         FROM tn_tarjetavirtual_sociedades tts
     """
 
@@ -687,6 +709,15 @@ class TarjetasRepository:
                 for row in rows:
                     row["visible_defecto"] = bool(row["visible_defecto"])
                     row["es_filtrable"] = bool(row["es_filtrable"])
+                if not any(r.get("key") == "fecha_activacion" for r in rows):
+                    rows.append({
+                        "key": "fecha_activacion",
+                        "label": "Fecha activación",
+                        "visible_defecto": True,
+                        "es_filtrable": True,
+                        "orden": 75,
+                        "tipo_dato": "datetime"
+                    })
                 return rows
         finally:
             conn.close()
