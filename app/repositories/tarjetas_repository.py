@@ -215,11 +215,7 @@ class TarjetasRepository:
                             ttc.seccional,
                             ttc.foto,
                             ttc.hash_sha256,
-                            COALESCE(
-                                (SELECT DATE_FORMAT(h.fecha, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial h WHERE h.tarjeta_id = ttc.id AND h.estado = 'Activa' ORDER BY h.id DESC LIMIT 1),
-                                (SELECT DATE_FORMAT(d.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_dispositivos d WHERE d.tarjeta_id = ttc.id AND d.tipo_tarjeta = 'contadores' ORDER BY d.id DESC LIMIT 1),
-                                CASE WHEN ttc.estado = 'Activa' THEN DATE_FORMAT(ttc.fecha_estado, '%%Y-%%m-%%d %%H:%%i:%%s') ELSE NULL END
-                            ) AS fecha_activacion
+                            DATE_FORMAT(ttc.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_activacion
                     """
                 else:
                     select_fields = """
@@ -243,11 +239,7 @@ class TarjetasRepository:
                             tts.representante_legal,
                             tts.foto,
                             tts.hash_sha256,
-                            COALESCE(
-                                (SELECT DATE_FORMAT(h.fecha, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial h WHERE h.tarjeta_id = tts.id AND h.estado = 'Activa' ORDER BY h.id DESC LIMIT 1),
-                                (SELECT DATE_FORMAT(d.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_dispositivos d WHERE d.tarjeta_id = tts.id AND d.tipo_tarjeta = 'sociedades' ORDER BY d.id DESC LIMIT 1),
-                                CASE WHEN tts.estado = 'Activa' THEN DATE_FORMAT(tts.fecha_estado, '%%Y-%%m-%%d %%H:%%i:%%s') ELSE NULL END
-                            ) AS fecha_activacion
+                            DATE_FORMAT(tts.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_activacion
                     """
 
                 data_query = f"""
@@ -302,11 +294,7 @@ class TarjetasRepository:
             ttc.seccional,
             ttc.foto,
             ttc.hash_sha256,
-            COALESCE(
-                (SELECT DATE_FORMAT(h.fecha, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial h WHERE h.tarjeta_id = ttc.id AND h.estado = 'Activa' ORDER BY h.id DESC LIMIT 1),
-                (SELECT DATE_FORMAT(d.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_dispositivos d WHERE d.tarjeta_id = ttc.id AND d.tipo_tarjeta = 'contadores' ORDER BY d.id DESC LIMIT 1),
-                CASE WHEN ttc.estado = 'Activa' THEN DATE_FORMAT(ttc.fecha_estado, '%%Y-%%m-%%d %%H:%%i:%%s') ELSE NULL END
-            ) AS fecha_activacion
+            DATE_FORMAT(ttc.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_activacion
         FROM tn_tarjetavirtual_contadores ttc
     """
 
@@ -331,11 +319,7 @@ class TarjetasRepository:
             tts.representante_legal,
             tts.foto,
             tts.hash_sha256,
-            COALESCE(
-                (SELECT DATE_FORMAT(h.fecha, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial h WHERE h.tarjeta_id = tts.id AND h.estado = 'Activa' ORDER BY h.id DESC LIMIT 1),
-                (SELECT DATE_FORMAT(d.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_dispositivos d WHERE d.tarjeta_id = tts.id AND d.tipo_tarjeta = 'sociedades' ORDER BY d.id DESC LIMIT 1),
-                CASE WHEN tts.estado = 'Activa' THEN DATE_FORMAT(tts.fecha_estado, '%%Y-%%m-%%d %%H:%%i:%%s') ELSE NULL END
-            ) AS fecha_activacion
+            DATE_FORMAT(tts.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_activacion
         FROM tn_tarjetavirtual_sociedades tts
     """
 
@@ -736,7 +720,7 @@ class TarjetasRepository:
                         CASE WHEN publicado = 1 THEN version ELSE NULL END AS version_publicada,
                         logo, patron, logo_impresion, patron_impresion,
                         color_fondo, color_letra, color_letra_impresion,
-                        nombre_director, firma_director,
+                        nombre_director, firma_director, observacion,
                         usuario_creacion_id,
                         DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_branding
@@ -779,8 +763,8 @@ class TarjetasRepository:
                 """
                 INSERT INTO tn_tarjetavirtual_configuracion_branding (
                     tipo_id, version, publicado, logo, patron, logo_impresion, patron_impresion,
-                    color_fondo, color_letra, color_letra_impresion, nombre_director, firma_director, usuario_creacion_id
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    color_fondo, color_letra, color_letra_impresion, nombre_director, firma_director, observacion, usuario_creacion_id
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     tipo_id,
@@ -795,6 +779,7 @@ class TarjetasRepository:
                     branding_credencials_data.get("color_letra_impresion", "#0f172a"),
                     branding_credencials_data.get("nombre_director"),
                     branding_credencials_data.get("firma_director"),
+                    branding_credencials_data.get("observacion"),
                     branding_credencials_data.get("usuario_creacion_id")
                 )
             )
@@ -826,7 +811,7 @@ class TarjetasRepository:
                         CASE WHEN publicado = 1 THEN version ELSE NULL END AS version_publicada,
                         logo, patron, logo_impresion, patron_impresion,
                         color_fondo, color_letra, color_letra_impresion,
-                        nombre_director, firma_director,
+                        nombre_director, firma_director, observacion,
                         usuario_creacion_id,
                         DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_branding
@@ -852,7 +837,7 @@ class TarjetasRepository:
                         version AS version_publicada,
                         logo, patron, logo_impresion, patron_impresion,
                         color_fondo, color_letra, color_letra_impresion,
-                        nombre_director, firma_director,
+                        nombre_director, firma_director, observacion,
                         usuario_creacion_id,
                         DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_branding
@@ -872,7 +857,7 @@ class TarjetasRepository:
                             version AS version_publicada,
                             logo, patron, logo_impresion, patron_impresion,
                             color_fondo, color_letra, color_letra_impresion,
-                            nombre_director, firma_director,
+                            nombre_director, firma_director, observacion,
                             usuario_creacion_id,
                             DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                         FROM tn_tarjetavirtual_configuracion_branding
@@ -917,6 +902,7 @@ class TarjetasRepository:
         try:
             async with conn.cursor() as cursor:
                 version_to_publish = data.get('version_publicada')
+                observacion = data.get('observacion')
                 
                 if not await self.validate_version_exists(branding_id, version_to_publish, client_id):
                     raise ValueError(f"La versión {version_to_publish} no existe en el registro (MS-3858)")
@@ -933,10 +919,10 @@ class TarjetasRepository:
                 await cursor.execute(
                     """
                     UPDATE tn_tarjetavirtual_configuracion_branding
-                    SET publicado = 1, updated_at = NOW()
+                    SET publicado = 1, observacion = %s, updated_at = NOW()
                     WHERE (tipo_id = %s OR id = %s) AND version = %s
                     """,
-                    (branding_id, branding_id, version_to_publish)
+                    (observacion, branding_id, branding_id, version_to_publish)
                 )
         finally:
             conn.close()
@@ -984,6 +970,7 @@ class TarjetasRepository:
                         color_letra_impresion,
                         nombre_director,
                         firma_director,
+                        observacion,
                         DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_branding
                     WHERE tipo_id = %s OR id = %s
@@ -1020,6 +1007,7 @@ class TarjetasRepository:
                         firma_director,
                         version,
                         publicado,
+                        observacion,
                         usuario_creacion_id,
                         DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_institucional
@@ -1039,6 +1027,7 @@ class TarjetasRepository:
                             firma_director,
                             version,
                             publicado,
+                            observacion,
                             usuario_creacion_id,
                             DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                         FROM tn_tarjetavirtual_configuracion_institucional
@@ -1072,8 +1061,8 @@ class TarjetasRepository:
                 """
                 INSERT INTO tn_tarjetavirtual_configuracion_institucional (
                     nombre_director, cargo_director, firma_director,
-                    version, publicado, usuario_creacion_id
-                ) VALUES (%s, %s, %s, %s, %s, %s)
+                    version, publicado, observacion, usuario_creacion_id
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     data.get("nombre_director"),
@@ -1081,6 +1070,7 @@ class TarjetasRepository:
                     data.get("firma_director"),
                     next_version,
                     is_published,
+                    data.get("observacion"),
                     data.get("usuario_creacion_id", 141)
                 )
             )
@@ -1125,6 +1115,7 @@ class TarjetasRepository:
                         firma_director,
                         version,
                         publicado,
+                        observacion,
                         DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
                     FROM tn_tarjetavirtual_configuracion_institucional
                     ORDER BY version DESC
@@ -1144,7 +1135,7 @@ class TarjetasRepository:
         finally:
             conn.close()
 
-    async def publish_institucional_version(self, version_id: int, client_id: Optional[int] = None) -> None:
+    async def publish_institucional_version(self, version_id: int, client_id: Optional[int] = None, observacion: Optional[str] = None) -> None:
         conn = await get_client_connection(client_id)
         try:
             async with conn.cursor() as cursor:
@@ -1152,10 +1143,10 @@ class TarjetasRepository:
                 await cursor.execute(
                     """
                     UPDATE tn_tarjetavirtual_configuracion_institucional
-                    SET publicado = 1, updated_at = NOW()
+                    SET publicado = 1, observacion = %s, updated_at = NOW()
                     WHERE id = %s OR version = %s
                     """,
-                    (version_id, version_id)
+                    (observacion, version_id, version_id)
                 )
         finally:
             conn.close()
@@ -2275,15 +2266,28 @@ class TarjetasRepository:
         try:
             async with conn.cursor() as cursor:
                 # 1. Actualizar estado de la tarjeta a 'Activa'
-                await cursor.execute(
-                    f"""
-                    UPDATE {tabla}
-                    SET estado = 'Activa',
-                        fecha_estado = NOW()
-                    WHERE id = %s
-                    """,
-                    (tarjeta_id,)
-                )
+                if tipo_tarjeta == "sociedades":
+                    await cursor.execute(
+                        f"""
+                        UPDATE {tabla}
+                        SET estado = 'Activa',
+                            fecha_activacion = COALESCE(fecha_activacion, NOW()),
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (tarjeta_id,)
+                    )
+                else:
+                    await cursor.execute(
+                        f"""
+                        UPDATE {tabla}
+                        SET estado = 'Activa',
+                            fecha_activacion = COALESCE(fecha_activacion, NOW()),
+                            fecha_estado = NOW()
+                        WHERE id = %s
+                        """,
+                        (tarjeta_id,)
+                    )
 
                 # 2. Registrar en historial de estados
                 desc = f"Activación satisfactoria en dispositivo móvil ({device_os or 'Mobile'} - {device_modelo or 'App'})"

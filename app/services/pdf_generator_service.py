@@ -17,7 +17,7 @@ import os
 import re
 import base64
 import qrcode
-from PIL import Image as PILImage, ImageDraw as PILImageDraw
+from PIL import Image as PILImage, ImageDraw as PILImageDraw, ImageOps as PILImageOps
 from svglib.svglib import svg2rlg, register_font
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -61,19 +61,39 @@ class PdfGeneratorService:
 
     @classmethod
     def _prepare_rounded_photo(cls, raw_bytes: bytes) -> str:
-        """Aplica esquinas redondeadas a la foto con PIL sobre fondo blanco."""
-        im = PILImage.open(io.BytesIO(raw_bytes)).convert("RGB")
-        im = im.resize((460, 460), PILImage.Resampling.LANCZOS)
-        mask = PILImage.new("L", im.size, 0)
-        draw = PILImageDraw.Draw(mask)
-        draw.rounded_rectangle([(0, 0), im.size], radius=64, fill=255)
-        bg = PILImage.new("RGB", im.size, (255, 255, 255))
-        bg.paste(im, mask=mask)
+        """
+        Ajusta la foto a proporción 3:4 tipo carnet sin estirarla (recorte centrado),
+        aplica esquinas redondeadas con borde sutil visible incluso si el fondo de la foto es blanco,
+        y preserva transparencia exterior (PNG RGBA) sobre la textura de la tarjeta.
+        """
+        im = PILImage.open(io.BytesIO(raw_bytes)).convert("RGBA")
+        target_size = (360, 480)  # Proporción exacta 3:4 (90 x 120 pt @ 4x)
+        radius = 48               # 12 pt @ 4x
+
+        # Recorte inteligente 3:4 sin deformar ni estirar (centrado horizontal, ligeramente superior para rostros)
+        im = PILImageOps.fit(im, target_size, method=PILImage.Resampling.LANCZOS, centering=(0.5, 0.35))
+
+        # Máscara de esquinas redondeadas (4 bordes)
+        mask = PILImage.new("L", target_size, 0)
+        draw_mask = PILImageDraw.Draw(mask)
+        draw_mask.rounded_rectangle([(0, 0), (target_size[0] - 1, target_size[1] - 1)], radius=radius, fill=255)
+
+        # Contorno sutil (#CBD5E1) para delimitar los bordes redondeados superiores cuando la foto tiene fondo blanco
+        draw_img = PILImageDraw.Draw(im)
+        draw_img.rounded_rectangle(
+            [(1, 1), (target_size[0] - 2, target_size[1] - 2)],
+            radius=radius,
+            outline=(203, 213, 225, 255),
+            width=4
+        )
+
+        out = PILImage.new("RGBA", target_size, (255, 255, 255, 0))
+        out.paste(im, (0, 0), mask=mask)
 
         buf = io.BytesIO()
-        bg.save(buf, format="JPEG", quality=95)
+        out.save(buf, format="PNG")
         b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-        return f"data:image/jpeg;base64,{b64}"
+        return f"data:image/png;base64,{b64}"
 
     @classmethod
     def _prepare_signature(cls, raw_bytes: bytes) -> str:
@@ -307,9 +327,10 @@ class PdfGeneratorService:
 
         if photo_bytes:
             foto_uri = cls._prepare_rounded_photo(photo_bytes)
+            svg = re.sub(r'<path[^>]*fill="white"[^>]*/>', '', svg)
             svg = re.sub(
                 r'<path[^>]*fill="url\(#pattern1_270_2849\)"[^>]*/>',
-                f'<image x="151" y="98.284" width="115" height="115" xlink:href="{foto_uri}"/>',
+                f'<image x="151" y="96.284" width="90" height="120" xlink:href="{foto_uri}"/>',
                 svg
             )
             svg = re.sub(r'<path[^>]*fill="url\(#pattern2_270_2849\)"[^>]*/>', '', svg)
