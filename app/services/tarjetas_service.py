@@ -150,7 +150,97 @@ class TarjetasService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    async def get_tarjeta_by_hash(self, hash_sha256: str, tipo_tarjeta: Optional[str] = None, client_id: Optional[int] = None) -> Dict[str, Any]:
+    async def sanitizar_tarjeta_validador(self, tarjeta: Dict[str, Any], client_id: Optional[int] = None) -> Dict[str, Any]:
+        if not tarjeta:
+            return tarjeta
+
+        is_sociedad = bool(tarjeta.get("tipo_tarjeta") == "sociedades" or tarjeta.get("nit") or tarjeta.get("razon_social"))
+        tipo_str = "sociedades" if is_sociedad else "contadores"
+
+        try:
+            cfg = await self.get_validador_config(tipo_str, client_id)
+        except Exception as e_cfg:
+            print(f"[TarjetasService] Advertencia al obtener config validador para sanitización: {e_cfg}")
+            cfg = None
+
+        if not cfg:
+            return tarjeta
+
+        tarjeta_sanitizada = dict(tarjeta)
+
+        def is_visible(canonical_key: str, legacy_key: Optional[str] = None) -> bool:
+            if canonical_key in cfg and cfg[canonical_key] is not None:
+                return bool(cfg[canonical_key])
+            if legacy_key and legacy_key in cfg and cfg[legacy_key] is not None:
+                return bool(cfg[legacy_key])
+            return True
+
+        if is_sociedad:
+            if not is_visible("val_numero_registro", "val_matricula"):
+                tarjeta_sanitizada["inscripcion"] = None
+                tarjeta_sanitizada["no_tarjeta"] = None
+                tarjeta_sanitizada["matricula"] = None
+            if not is_visible("val_fecha_resolucion"):
+                tarjeta_sanitizada["fecha_resolucion"] = None
+            if not is_visible("val_expediente"):
+                tarjeta_sanitizada["no_expd"] = None
+                tarjeta_sanitizada["expediente"] = None
+            if not is_visible("val_razon_social", "val_nombres"):
+                tarjeta_sanitizada["razon_social"] = None
+                tarjeta_sanitizada["nombre_completo"] = None
+                tarjeta_sanitizada["solicitante"] = None
+            if not is_visible("val_nit", "val_numero_identificacion"):
+                tarjeta_sanitizada["nit"] = None
+                tarjeta_sanitizada["no_documento"] = None
+                tarjeta_sanitizada["documento"] = None
+            if not is_visible("val_tipo_registro"):
+                tarjeta_sanitizada["tipo_sociedad"] = None
+                tarjeta_sanitizada["tipo_asociado"] = None
+            if not is_visible("val_resolucion"):
+                tarjeta_sanitizada["resolucion"] = None
+            if not is_visible("val_estado"):
+                tarjeta_sanitizada["estado_tarjeta"] = None
+                tarjeta_sanitizada["estado"] = None
+                tarjeta_sanitizada["estado_sociedad"] = None
+            if not is_visible("val_codigo_tarjeta"):
+                tarjeta_sanitizada["hash_sha256"] = None
+            if not is_visible("val_foto"):
+                tarjeta_sanitizada["foto"] = None
+        else:
+            if not is_visible("val_tarjeta_profesional", "val_matricula"):
+                tarjeta_sanitizada["no_tarjeta"] = None
+                tarjeta_sanitizada["matricula"] = None
+                tarjeta_sanitizada["inscripcion"] = None
+            if not is_visible("val_fecha_resolucion"):
+                tarjeta_sanitizada["fecha_resolucion"] = None
+            if not is_visible("val_resolucion"):
+                tarjeta_sanitizada["resolucion"] = None
+            if not is_visible("val_nombre", "val_nombres"):
+                tarjeta_sanitizada["nombre_completo"] = None
+                tarjeta_sanitizada["solicitante"] = None
+                tarjeta_sanitizada["nombres"] = None
+                tarjeta_sanitizada["primer_apellido"] = None
+                tarjeta_sanitizada["segundo_apellido"] = None
+            if not is_visible("val_cedula", "val_numero_identificacion"):
+                tarjeta_sanitizada["no_documento"] = None
+                tarjeta_sanitizada["documento"] = None
+            if not is_visible("val_institucion"):
+                tarjeta_sanitizada["universidad"] = None
+            if not is_visible("val_expediente"):
+                tarjeta_sanitizada["no_expd"] = None
+                tarjeta_sanitizada["expediente"] = None
+            if not is_visible("val_estado"):
+                tarjeta_sanitizada["estado_tarjeta"] = None
+                tarjeta_sanitizada["estado"] = None
+                tarjeta_sanitizada["estado_contador"] = None
+            if not is_visible("val_codigo_tarjeta"):
+                tarjeta_sanitizada["hash_sha256"] = None
+            if not is_visible("val_foto"):
+                tarjeta_sanitizada["foto"] = None
+
+        return tarjeta_sanitizada
+
+    async def get_tarjeta_by_hash(self, hash_sha256: str, tipo_tarjeta: Optional[str] = None, client_id: Optional[int] = None, sanitizar: bool = True) -> Dict[str, Any]:
         try:
             tarjeta = await self.repository.get_by_hash(hash_sha256, tipo_tarjeta, client_id)
             if not tarjeta:
@@ -160,6 +250,8 @@ class TarjetasService:
                     cliente_id=client_id,
                     status_code=status.HTTP_404_NOT_FOUND
                 )
+            if sanitizar:
+                tarjeta = await self.sanitizar_tarjeta_validador(tarjeta, client_id)
             return tarjeta
         except PipelineException:
             raise
@@ -215,7 +307,7 @@ class TarjetasService:
         tipo_tarjeta: Optional[str] = None,
         client_id: Optional[int] = None
     ) -> Tuple[bytes, str]:
-        tarjeta = await self.get_tarjeta_by_hash(hash_sha256, tipo_tarjeta, client_id)
+        tarjeta = await self.get_tarjeta_by_hash(hash_sha256, tipo_tarjeta, client_id, sanitizar=False)
         is_sociedad = bool(tarjeta.get("nit") or (tipo_tarjeta and tipo_tarjeta.lower() in ["sociedades", "sociedad"]))
         tipo_str = "sociedades" if is_sociedad else "contadores"
 
