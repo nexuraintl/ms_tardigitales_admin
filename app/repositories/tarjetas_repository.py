@@ -215,7 +215,7 @@ class TarjetasRepository:
                             ttc.seccional,
                             ttc.foto,
                             ttc.hash_sha256,
-                            DATE_FORMAT(ttc.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_activacion
+                            (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = ttc.id AND teh.estado = 'Activa') AS fecha_activacion
                     """
                 else:
                     select_fields = """
@@ -239,7 +239,7 @@ class TarjetasRepository:
                             tts.representante_legal,
                             tts.foto,
                             tts.hash_sha256,
-                            DATE_FORMAT(tts.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_activacion
+                            (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = tts.id AND teh.estado = 'Activa') AS fecha_activacion
                     """
 
                 data_query = f"""
@@ -294,7 +294,7 @@ class TarjetasRepository:
             ttc.seccional,
             ttc.foto,
             ttc.hash_sha256,
-            DATE_FORMAT(ttc.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_activacion
+            (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = ttc.id AND teh.estado = 'Activa') AS fecha_activacion
         FROM tn_tarjetavirtual_contadores ttc
     """
 
@@ -319,7 +319,7 @@ class TarjetasRepository:
             tts.representante_legal,
             tts.foto,
             tts.hash_sha256,
-            DATE_FORMAT(tts.fecha_activacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_activacion
+            (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = tts.id AND teh.estado = 'Activa') AS fecha_activacion
         FROM tn_tarjetavirtual_sociedades tts
     """
 
@@ -2271,7 +2271,6 @@ class TarjetasRepository:
                         f"""
                         UPDATE {tabla}
                         SET estado = 'Activa',
-                            fecha_activacion = COALESCE(fecha_activacion, NOW()),
                             updated_at = NOW()
                         WHERE id = %s
                         """,
@@ -2282,7 +2281,6 @@ class TarjetasRepository:
                         f"""
                         UPDATE {tabla}
                         SET estado = 'Activa',
-                            fecha_activacion = COALESCE(fecha_activacion, NOW()),
                             fecha_estado = NOW()
                         WHERE id = %s
                         """,
