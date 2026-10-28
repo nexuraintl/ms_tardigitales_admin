@@ -10,6 +10,8 @@ Ajustes de impresión:
 1. Sin icono de copiar en el número de tarjeta.
 2. Margen de impresión seguro (> 13 mm en los 4 bordes).
 3. Alineación perfecta al ras derecho (text-anchor="end" x="458") en toda la columna derecha.
+4. Avatar neutro por defecto (silueta gris azulada idéntica al componente de tarjeta) cuando no hay fotografía.
+5. Textos de Nombre e Institución de Educación Superior con tamaño ajustado (11pt) y soporte de hasta 2 renglones sin recortes.
 """
 
 import io
@@ -58,6 +60,67 @@ class PdfGeneratorService:
         """Ruta absoluta a un asset estático del microservicio."""
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return os.path.join(base_dir, "assets", filename)
+
+    @classmethod
+    def _generate_default_avatar_bytes(cls) -> bytes:
+        """
+        Genera el avatar neutro por defecto (idéntico a default-avatar.svg del componente de tarjeta:
+        fondo degradado #334155 -> #1e293b y silueta #cbd5e1) en proporción 3:4 (360x480 px).
+        """
+        w, h = 360, 480
+        im = PILImage.new("RGBA", (w, h), (30, 41, 59, 255))
+        draw = PILImageDraw.Draw(im)
+
+        # Degradado vertical suave #334155 (51, 65, 85) -> #1e293b (30, 41, 59)
+        for y in range(h):
+            t = y / float(h - 1)
+            r = int(51 + (30 - 51) * t)
+            g = int(65 + (41 - 65) * t)
+            b = int(85 + (59 - 85) * t)
+            draw.line([(0, y), (w, y)], fill=(r, g, b, 255))
+
+        # Silueta neutra en color #CBD5E1 (203, 213, 225)
+        fg = (203, 213, 225, 255)
+        # Cabeza centrada
+        cx, cy, cr = 180, 175, 62
+        draw.ellipse([(cx - cr, cy - cr), (cx + cr, cy + cr)], fill=fg)
+        # Hombros / torso redondeado
+        draw.pieslice([(56, 275), (304, 515)], start=180, end=360, fill=fg)
+
+        buf = io.BytesIO()
+        im.save(buf, format="PNG")
+        return buf.getvalue()
+
+    @staticmethod
+    def _wrap_two_lines(text: str, max_chars: int = 31) -> list:
+        """
+        Divide un texto largo por palabras en hasta 2 renglones para aprovechar
+        el espacio vertical de la tarjeta sin ocultar ni truncar en una sola línea.
+        """
+        clean = " ".join(str(text or "").strip().split())
+        if not clean:
+            return ["-"]
+        if len(clean) <= max_chars:
+            return [clean]
+
+        words = clean.split(" ")
+        line1 = ""
+        idx = 0
+        for i, w in enumerate(words):
+            candidate = f"{line1} {w}".strip() if line1 else w
+            if len(candidate) <= max_chars or not line1:
+                line1 = candidate[:max_chars]
+                idx = i + 1
+            else:
+                break
+
+        rest = " ".join(words[idx:]).strip()
+        if not rest:
+            return [line1]
+
+        if len(rest) > max_chars + 3:
+            rest = rest[:max_chars].rstrip() + "..."
+        return [line1, rest]
 
     @classmethod
     def _prepare_rounded_photo(cls, raw_bytes: bytes) -> str:
@@ -192,7 +255,6 @@ class PdfGeneratorService:
         lbl_ies = "Institución de Educación Superior" if tipo_tarjeta == "contadores" else "Tipo de sociedad"
 
         # 6. ALINEAR PERFECTAMENTE LA COLUMNA DERECHA (Requerimiento 3: text-anchor="end" x="458")
-        # Todos los textos de la columna derecha se alinean al margen interno derecho x="458"
         svg = re.sub(
             r'<text[^>]*>\s*<tspan[^>]*>Tarjeta profesional</tspan>\s*</text>',
             f'<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="12"><tspan x="458" y="114.904">{lbl_tarjeta}</tspan></text>',
@@ -217,49 +279,74 @@ class PdfGeneratorService:
             svg
         )
 
+        # Eliminar el clipPath restrictivo clip2_270_2849 sobre Nombre para permitir 2 renglones completos
+        svg = re.sub(
+            r'<g clip-path="url\(#clip2_270_2849\)">\s*(<text[^>]*>\s*<tspan[^>]*>Andr&#xe9;s Felipe Torres C&#xe1;rdenas</tspan>\s*</text>)\s*</g>',
+            r'\1',
+            svg
+        )
+
+        # Dividir Nombre e Institución de Educación Superior en hasta 2 renglones (fuente 11pt bold)
+        nombre_lines = cls._wrap_two_lines(val_nombre, max_chars=31)
+        ies_lines = cls._wrap_two_lines(val_ies, max_chars=31)
+
+        if len(nombre_lines) == 1:
+            nombre_tspans = f'<tspan x="151" y="260">{nombre_lines[0]}</tspan>'
+        else:
+            nombre_tspans = f'<tspan x="151" y="259">{nombre_lines[0]}</tspan><tspan x="151" y="273">{nombre_lines[1]}</tspan>'
+
+        if len(ies_lines) == 1:
+            ies_tspans = f'<tspan x="151" y="322">{ies_lines[0]}</tspan>'
+        else:
+            ies_tspans = f'<tspan x="151" y="321">{ies_lines[0]}</tspan><tspan x="151" y="335">{ies_lines[1]}</tspan>'
+
+        # Fila Nombre / Cédula de Ciudadanía
+        svg = re.sub(
+            r'<text[^>]*>\s*<tspan[^>]*>Nombre</tspan>\s*</text>',
+            '<text fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="11"><tspan x="151" y="242">Nombre</tspan></text>',
+            svg
+        )
+
+        svg = re.sub(
+            r'<text[^>]*>\s*<tspan[^>]*>Andr&#xe9;s Felipe Torres C&#xe1;rdenas</tspan>\s*</text>',
+            f'<text fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="11" font-weight="bold">{nombre_tspans}</text>',
+            svg
+        )
+
         svg = re.sub(
             r'<text[^>]*>\s*<tspan[^>]*>C&#xe9;dula de Ciudadan&#xed;a</tspan>\s*</text>',
-            f'<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="12"><tspan x="458" y="249.904">{lbl_doc}</tspan></text>',
+            f'<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="11"><tspan x="458" y="242">{lbl_doc}</tspan></text>',
             svg
         )
 
         svg = re.sub(
             r'<text[^>]*>\s*<tspan[^>]*>1\.053\.892\.146</tspan>\s*</text>',
-            f'<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="14" font-weight="bold"><tspan x="458" y="276.674">{val_documento}</tspan></text>',
+            f'<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="13" font-weight="bold"><tspan x="458" y="260">{val_documento}</tspan></text>',
             svg
         )
 
-        svg = re.sub(
-            r'<text[^>]*>\s*<tspan[^>]*>Res\. Inscripci&#xf3;n</tspan>\s*</text>',
-            '<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="12"><tspan x="458" y="313.904">Res. Inscripci&#xf3;n</tspan></text>',
-            svg
-        )
-
-        svg = re.sub(
-            r'<text[^>]*>\s*<tspan[^>]*>289</tspan>\s*</text>',
-            f'<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="14" font-weight="bold"><tspan x="458" y="340.674">{val_resolucion}</tspan></text>',
-            svg
-        )
-
-        # Columna izquierda: Nombre y Universidad con margen de seguridad
-        display_nombre = (val_nombre[:26] + "...") if len(val_nombre) > 28 else val_nombre
-        display_ies = (val_ies[:26] + "...") if len(val_ies) > 28 else val_ies
-
-        svg = re.sub(
-            r'<text[^>]*>\s*<tspan[^>]*>Andr&#xe9;s Felipe Torres C&#xe1;rdenas</tspan>\s*</text>',
-            f'<text fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="14" font-weight="bold"><tspan x="151" y="276.674">{display_nombre}</tspan></text>',
-            svg
-        )
-
+        # Fila Institución de Educación Superior / Res. Inscripción
         svg = re.sub(
             r'<text[^>]*>\s*<tspan[^>]*>Instituci&#xf3;n de Educaci&#xf3;n Superior</tspan>\s*</text>',
-            f'<text fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="12"><tspan x="151" y="313.904">{lbl_ies}</tspan></text>',
+            f'<text fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="11"><tspan x="151" y="304">{lbl_ies}</tspan></text>',
             svg
         )
 
         svg = re.sub(
             r'<text[^>]*>\s*<tspan[^>]*>Universidad de La Salle</tspan>\s*</text>',
-            f'<text fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="14" font-weight="bold"><tspan x="151" y="340.674">{display_ies}</tspan></text>',
+            f'<text fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="11" font-weight="bold">{ies_tspans}</text>',
+            svg
+        )
+
+        svg = re.sub(
+            r'<text[^>]*>\s*<tspan[^>]*>Res\. Inscripci&#xf3;n</tspan>\s*</text>',
+            '<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="11"><tspan x="458" y="304">Res. Inscripci&#xf3;n</tspan></text>',
+            svg
+        )
+
+        svg = re.sub(
+            r'<text[^>]*>\s*<tspan[^>]*>289</tspan>\s*</text>',
+            f'<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="13" font-weight="bold"><tspan x="458" y="322">{val_resolucion}</tspan></text>',
             svg
         )
 
@@ -300,7 +387,7 @@ class PdfGeneratorService:
             svg
         )
 
-        # 8. Preparar Foto del titular con esquinas redondeadas
+        # 8. Preparar Foto del titular con esquinas redondeadas (o avatar neutro por defecto si no tiene foto)
         photo_bytes = None
         if tarjeta.get("foto") and str(tarjeta.get("foto")).startswith("data:image"):
             try:
@@ -317,13 +404,16 @@ class PdfGeneratorService:
                 pass
 
         if not photo_bytes:
-            default_photo = "contador_foto_ejemplo.jpg" if tipo_tarjeta == "contadores" else "sociedad_logo_ejemplo.png"
-            default_path = cls._get_asset_path(default_photo)
-            if not os.path.exists(default_path):
-                default_path = cls._get_asset_path("photo_card.jpg")
-            if os.path.exists(default_path):
-                with open(default_path, "rb") as f:
-                    photo_bytes = f.read()
+            if tipo_tarjeta == "sociedades":
+                default_path = cls._get_asset_path("sociedad_logo_ejemplo.png")
+                if os.path.exists(default_path):
+                    with open(default_path, "rb") as f:
+                        photo_bytes = f.read()
+                else:
+                    photo_bytes = cls._generate_default_avatar_bytes()
+            else:
+                # Contadores sin fotografía: usar silueta neutra por defecto del componente de tarjeta
+                photo_bytes = cls._generate_default_avatar_bytes()
 
         if photo_bytes:
             foto_uri = cls._prepare_rounded_photo(photo_bytes)
@@ -336,8 +426,16 @@ class PdfGeneratorService:
             svg = re.sub(r'<path[^>]*fill="url\(#pattern2_270_2849\)"[^>]*/>', '', svg)
 
         # 9. Generación e inyección del código QR oficial
-        hash_doc = tarjeta.get("hash_documento") or tarjeta.get("hash_registro") or "VALIDACION-OFICIAL-JCC"
-        qr_url = f"https://jcc.gov.co/validar/{hash_doc}"
+        hash_doc = (
+            tarjeta.get("hash_sha256")
+            or tarjeta.get("hash_documento")
+            or tarjeta.get("hash_registro")
+            or ""
+        )
+        raw_base = str(tarjeta.get("base_url") or "https://preproduccion9.jcc.nexura.com.co").strip()
+        m_origin = re.match(r"^(https?://[^/]+)", raw_base)
+        base_url = m_origin.group(1) if m_origin else "https://preproduccion9.jcc.nexura.com.co"
+        qr_url = f"{base_url}/admin/tardigitales/verificar?token={hash_doc}"
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_M,
