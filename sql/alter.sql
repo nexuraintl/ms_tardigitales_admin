@@ -6,39 +6,30 @@
 
 SET NAMES utf8mb4;
 
--- [2026-10-27] Columnas de vinculación de dispositivo móvil y fecha de activación en Contadores y Sociedades (HU-JCC-014 / Bug 26893)
-ALTER TABLE `tn_tarjetavirtual_contadores`
-  ADD COLUMN IF NOT EXISTS `fcm_token` VARCHAR(500) NULL DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS `device_id` VARCHAR(255) NULL DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS `device_os` VARCHAR(100) NULL DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS `fecha_activacion` DATETIME NULL DEFAULT NULL;
-
-ALTER TABLE `tn_tarjetavirtual_sociedades`
-  ADD COLUMN IF NOT EXISTS `fcm_token` VARCHAR(500) NULL DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS `device_id` VARCHAR(255) NULL DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS `device_os` VARCHAR(100) NULL DEFAULT NULL,
-  ADD COLUMN IF NOT EXISTS `fecha_activacion` DATETIME NULL DEFAULT NULL;
-
--- [2026-10-27] Tabla satélite de dispositivos vinculados para trazabilidad de activación móvil y push notifications (HU-JCC-014 / HU-JCC-023)
+-- [2026-10-27] Tabla satélite de dispositivos móviles vinculados para notificaciones push FCM (HU-JCC-014 / HU-JCC-023)
 CREATE TABLE IF NOT EXISTS `tn_tarjetavirtual_dispositivos` (
-  `id` INT(11) NOT NULL AUTO_INCREMENT,
-  `tarjeta_id` INT(11) NOT NULL,
-  `tipo_tarjeta` VARCHAR(30) NOT NULL DEFAULT 'contadores',
-  `device_id` VARCHAR(255) NOT NULL,
-  `device_os` VARCHAR(100) DEFAULT NULL,
-  `fcm_token` VARCHAR(500) NOT NULL,
-  `activo` TINYINT(1) NOT NULL DEFAULT 1,
-  `fecha_vinculacion` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `client_id` int(11) NOT NULL DEFAULT 20001,
+  `tarjeta_id` int(11) NOT NULL,
+  `tipo_tarjeta` enum('contadores','sociedades') NOT NULL DEFAULT 'contadores',
+  `fcm_token` varchar(500) DEFAULT NULL,
+  `device_id` varchar(150) DEFAULT NULL,
+  `device_os` varchar(50) DEFAULT NULL,
+  `device_modelo` varchar(100) DEFAULT NULL,
+  `app_version` varchar(50) DEFAULT NULL,
+  `estado` enum('activo','inactivo') NOT NULL DEFAULT 'activo',
+  `fecha_activacion` datetime NOT NULL DEFAULT current_timestamp(),
+  `fecha_ultimo_acceso` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_tarjeta_tipo` (`tarjeta_id`, `tipo_tarjeta`),
-  KEY `idx_device_id` (`device_id`)
+  KEY `idx_disp_tarjeta` (`client_id`,`tarjeta_id`,`tipo_tarjeta`),
+  KEY `idx_disp_device` (`device_id`),
+  KEY `idx_disp_fcm` (`fcm_token`(255))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- [2026-10-28] Configuración de columna "Fecha de activación" en el selector de columnas y filtros de tarjetas (Bug 26893)
+-- [2026-10-28] Configuración de columna "Fecha de activación" en el selector de columnas (consultada desde tn_tarjetavirtual_estados_historial) (Bug 26893)
 INSERT INTO `tn_tarjetavirtual_config_columnas_filtro_tarjetas`
   (`tipo_tarjeta`, `key_name`, `label`, `visible_defecto`, `es_filtrable`, `orden`, `tipo_dato`)
-SELECT 'contadores', 'fecha_activacion', 'Fecha de activación', 0, 0, 18, 'date'
+SELECT 'contadores', 'fecha_activacion', 'Fecha de activación', 1, 1, 8, 'date'
 FROM DUAL
 WHERE NOT EXISTS (
   SELECT 1 FROM `tn_tarjetavirtual_config_columnas_filtro_tarjetas`
@@ -47,7 +38,7 @@ WHERE NOT EXISTS (
 
 INSERT INTO `tn_tarjetavirtual_config_columnas_filtro_tarjetas`
   (`tipo_tarjeta`, `key_name`, `label`, `visible_defecto`, `es_filtrable`, `orden`, `tipo_dato`)
-SELECT 'sociedades', 'fecha_activacion', 'Fecha de activación', 0, 0, 16, 'date'
+SELECT 'sociedades', 'fecha_activacion', 'Fecha de activación', 1, 1, 8, 'date'
 FROM DUAL
 WHERE NOT EXISTS (
   SELECT 1 FROM `tn_tarjetavirtual_config_columnas_filtro_tarjetas`
@@ -60,4 +51,3 @@ ALTER TABLE `tn_tarjetavirtual_configuracion_branding`
 
 ALTER TABLE `tn_tarjetavirtual_configuracion_institucional`
   ADD COLUMN IF NOT EXISTS `observacion` TEXT NULL DEFAULT NULL;
-
