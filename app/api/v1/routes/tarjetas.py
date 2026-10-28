@@ -10,7 +10,8 @@ from app.schemas.tarjetas_schema import (
     BrandingCredentialsUpdateSchema,
     ConsultaTarjetaSchema,
     EmisionMasivaRequestSchema,
-    InstitucionalConfigCreateSchema
+    InstitucionalConfigCreateSchema,
+    InstitucionalConfigUpdateSchema
 )
 
 router = APIRouter()
@@ -200,6 +201,7 @@ async def create_branding_credentials(
     firma_director: Optional[UploadFile] = File(None),
     nombre_director: Optional[str] = Form(None),
     firma_director_base64: Optional[str] = Form(None),
+    observacion: Optional[str] = Form(None),
     color_fondo: str = Form(...),
     color_letra: str = Form(...),
     color_letra_impresion: str = Form("#0f172a"),
@@ -226,6 +228,7 @@ async def create_branding_credentials(
         color_letra_impresion=color_letra_impresion,
         nombre_director=nombre_director,
         firma_director=firma_base64,
+        observacion=observacion,
         usuario_creacion_id=usuario_creacion_id,
         tipo_id=tipo_id,
     )
@@ -294,9 +297,11 @@ async def list_institucional_history(
 @router.put("/branding-institucional/update/change-version/{id}")
 async def publish_institucional_version(
     id: int = Path(..., description="ID de la versión institucional a publicar"),
+    data: Optional[InstitucionalConfigUpdateSchema] = Body(None),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
 ):
-    return await service.publish_institucional_version(id, client_id)
+    observacion = data.observacion if data else None
+    return await service.publish_institucional_version(id, client_id, observacion=observacion)
 
 
 # Auditoria API
