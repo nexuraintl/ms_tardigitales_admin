@@ -270,6 +270,7 @@ class TarjetasService:
         tarjeta_id: int,
         tipo_tarjeta: Optional[str] = None,
         client_id: Optional[int] = None
+        , base_url: Optional[str] = None
     ) -> Tuple[bytes, str]:
         tarjeta = await self.get_tarjeta(tarjeta_id, tipo_tarjeta, client_id)
         is_sociedad = bool(tarjeta.get("nit") or (tipo_tarjeta and tipo_tarjeta.lower() in ["sociedades", "sociedad"]))
@@ -283,6 +284,8 @@ class TarjetasService:
 
         datos_combinados = dict(tarjeta)
         datos_combinados["tipo_tarjeta"] = tipo_str
+        if base_url:
+            datos_combinados["base_url"] = base_url
         if branding:
             b_data = branding.get("data") if (isinstance(branding, dict) and "data" in branding) else branding
             for k in ["patron", "patron_impresion", "logo", "logo_impresion", "color_fondo", "color_letra", "color_letra_impresion", "nombre_director", "cargo_director", "firma_director"]:
@@ -306,6 +309,7 @@ class TarjetasService:
         hash_sha256: str,
         tipo_tarjeta: Optional[str] = None,
         client_id: Optional[int] = None
+        , base_url: Optional[str] = None
     ) -> Tuple[bytes, str]:
         tarjeta = await self.get_tarjeta_by_hash(hash_sha256, tipo_tarjeta, client_id, sanitizar=False)
         is_sociedad = bool(tarjeta.get("nit") or (tipo_tarjeta and tipo_tarjeta.lower() in ["sociedades", "sociedad"]))
@@ -319,6 +323,8 @@ class TarjetasService:
 
         datos_combinados = dict(tarjeta)
         datos_combinados["tipo_tarjeta"] = tipo_str
+        if base_url:
+            datos_combinados["base_url"] = base_url
         if branding:
             b_data = branding.get("data") if (isinstance(branding, dict) and "data" in branding) else branding
             for k in ["patron", "patron_impresion", "logo", "logo_impresion", "color_fondo", "color_letra", "color_letra_impresion", "nombre_director", "cargo_director", "firma_director"]:
