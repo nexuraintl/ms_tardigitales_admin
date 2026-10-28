@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Response, Query, HTTPException, Path, Body, Form, File, UploadFile, BackgroundTasks, status
+from fastapi import APIRouter, Request, Response, Query, HTTPException, Path, Body, Form, File, UploadFile, BackgroundTasks, status
+from urllib.parse import urlsplit
 from typing import List, Dict, Any, Optional
 from app.services.tarjetas_service import TarjetasService
 from app.utils.image_utils import ImageUtils
@@ -68,6 +69,7 @@ async def consult_registry(
 
 @router.get("/get/{id}")
 async def get_tarjeta(
+    request: Request,
     id: int = Path(..., description="ID de la tarjeta"),
     tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
@@ -78,6 +80,7 @@ async def get_tarjeta(
 @router.get("/get-by-hash/{hash}")
 @router.get("/verificar/{hash}")
 async def get_tarjeta_by_hash(
+    request: Request,
     hash: str = Path(..., min_length=10, max_length=64, description="Hash SHA-256 canónico de la tarjeta"),
     tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
@@ -106,12 +109,14 @@ async def verificar_tarjeta_query(
 @router.get("/pdf/{id}")
 @router.get("/get/{id}/pdf")
 async def export_tarjeta_pdf(
+    request: Request,
     id: int = Path(..., description="ID de la tarjeta"),
     tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    base_url: Optional[str] = Query(None, description="URL base del portal frontend para el código QR"),
     download: bool = Query(True, description="Si es True fuerza la descarga como attachment")
 ):
-    pdf_bytes, filename = await service.generar_pdf_tarjeta(id, tipo_tarjeta, client_id)
+    pdf_bytes, filename = await service.generar_pdf_tarjeta(id, tipo_tarjeta, client_id, base_url=base_url or request.headers.get("origin") or request.headers.get("referer"))
     disposition = "attachment" if download else "inline"
     return Response(
         content=pdf_bytes,
@@ -128,12 +133,14 @@ async def export_tarjeta_pdf(
 @router.get("/verificar/{hash}/pdf")
 @router.get("/get-by-hash/{hash}/pdf")
 async def export_tarjeta_pdf_by_hash(
+    request: Request,
     hash: str = Path(..., min_length=10, max_length=64, description="Hash SHA-256 canónico de la tarjeta"),
     tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    base_url: Optional[str] = Query(None, description="URL base del portal frontend para el código QR"),
     download: bool = Query(True, description="Si es True fuerza la descarga como attachment")
 ):
-    pdf_bytes, filename = await service.generar_pdf_tarjeta_by_hash(hash, tipo_tarjeta, client_id)
+    pdf_bytes, filename = await service.generar_pdf_tarjeta_by_hash(hash, tipo_tarjeta, client_id, base_url=base_url or request.headers.get("origin") or request.headers.get("referer"))
     disposition = "attachment" if download else "inline"
     return Response(
         content=pdf_bytes,
@@ -156,6 +163,7 @@ async def create_tarjeta(
 
 @router.get("/historial/{id}")
 async def get_historial(
+    request: Request,
     id: int = Path(..., description="ID de la tarjeta"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
     tipo: Optional[str] = Query(None, description="Tipo de tarjeta ('contador' o 'sociedad')")
