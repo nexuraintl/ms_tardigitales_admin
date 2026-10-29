@@ -638,16 +638,19 @@ class TarjetasRepository:
                     INSERT INTO tn_tarjetavirtual_config_validador (
                         client_id, tipo_tarjeta,
                         val_tarjeta_profesional, val_fecha_resolucion, val_resolucion,
-                        val_nombre, val_cedula, val_institucion, val_expediente,
-                        val_numero_registro, val_razon_social, val_nit, val_tipo_registro,
+                        val_nombre, val_nombres, val_cedula, val_numero_identificacion, val_institucion, val_expediente,
+                        val_numero_registro, val_matricula, val_razon_social, val_nit, val_tipo_registro,
                         val_codigo_tarjeta, val_foto, val_estado
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         val_tarjeta_profesional = VALUES(val_tarjeta_profesional),
+                        val_matricula = VALUES(val_matricula),
                         val_fecha_resolucion = VALUES(val_fecha_resolucion),
                         val_resolucion = VALUES(val_resolucion),
                         val_nombre = VALUES(val_nombre),
+                        val_nombres = VALUES(val_nombres),
                         val_cedula = VALUES(val_cedula),
+                        val_numero_identificacion = VALUES(val_numero_identificacion),
                         val_institucion = VALUES(val_institucion),
                         val_expediente = VALUES(val_expediente),
                         val_numero_registro = VALUES(val_numero_registro),
@@ -661,8 +664,9 @@ class TarjetasRepository:
                     """,
                     (
                         client_id, tipo_normalizado,
-                        v_tp, v_fr, v_res, v_nom, v_ced, v_inst, v_exp,
-                        v_reg, v_rs, v_nit, v_tr,
+                        v_tp, v_fr, v_res,
+                        v_nom, v_nom, v_ced, v_ced, v_inst, v_exp,
+                        v_reg, v_reg, v_rs, v_nit, v_tr,
                         v_cod, v_foto, v_est
                     )
                 )
