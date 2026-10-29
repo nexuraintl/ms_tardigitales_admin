@@ -12,6 +12,7 @@ Ajustes de impresión:
 3. Alineación perfecta al ras derecho (text-anchor="end" x="458") en toda la columna derecha.
 4. Avatar neutro por defecto (silueta gris azulada idéntica al componente de tarjeta) cuando no hay fotografía.
 5. Textos de Nombre e Institución de Educación Superior con tamaño ajustado (11pt) y soporte de hasta 2 renglones sin recortes.
+6. Fotografía / avatar ~30% más grande (115 x 146 pt) aprovechando el espacio disponible en la tarjeta.
 """
 
 import io
@@ -65,9 +66,9 @@ class PdfGeneratorService:
     def _generate_default_avatar_bytes(cls) -> bytes:
         """
         Genera el avatar neutro por defecto (idéntico a default-avatar.svg del componente de tarjeta:
-        fondo degradado #334155 -> #1e293b y silueta #cbd5e1) en proporción 3:4 (360x480 px).
+        fondo degradado #334155 -> #1e293b y silueta #cbd5e1) en 460x584 px (115x146 pt @ 4x).
         """
-        w, h = 360, 480
+        w, h = 460, 584
         im = PILImage.new("RGBA", (w, h), (30, 41, 59, 255))
         draw = PILImageDraw.Draw(im)
 
@@ -82,10 +83,10 @@ class PdfGeneratorService:
         # Silueta neutra en color #CBD5E1 (203, 213, 225)
         fg = (203, 213, 225, 255)
         # Cabeza centrada
-        cx, cy, cr = 180, 175, 62
+        cx, cy, cr = 230, 212, 84
         draw.ellipse([(cx - cr, cy - cr), (cx + cr, cy + cr)], fill=fg)
         # Hombros / torso redondeado
-        draw.pieslice([(56, 275), (304, 515)], start=180, end=360, fill=fg)
+        draw.pieslice([(62, 334), (398, 630)], start=180, end=360, fill=fg)
 
         buf = io.BytesIO()
         im.save(buf, format="PNG")
@@ -125,15 +126,15 @@ class PdfGeneratorService:
     @classmethod
     def _prepare_rounded_photo(cls, raw_bytes: bytes) -> str:
         """
-        Ajusta la foto a proporción 3:4 tipo carnet sin estirarla (recorte centrado),
+        Ajusta la foto a proporción 115x146 pt (~30% más grande que 90x120 pt) sin estirarla (recorte centrado),
         aplica esquinas redondeadas con borde sutil visible incluso si el fondo de la foto es blanco,
         y preserva transparencia exterior (PNG RGBA) sobre la textura de la tarjeta.
         """
         im = PILImage.open(io.BytesIO(raw_bytes)).convert("RGBA")
-        target_size = (360, 480)  # Proporción exacta 3:4 (90 x 120 pt @ 4x)
-        radius = 48               # 12 pt @ 4x
+        target_size = (460, 584)  # 115 x 146 pt @ 4x (~28-30% más grande que 90 x 120 pt)
+        radius = 56               # 14 pt @ 4x
 
-        # Recorte inteligente 3:4 sin deformar ni estirar (centrado horizontal, ligeramente superior para rostros)
+        # Recorte inteligente sin deformar ni estirar (centrado horizontal, ligeramente superior para rostros)
         im = PILImageOps.fit(im, target_size, method=PILImage.Resampling.LANCZOS, centering=(0.5, 0.35))
 
         # Máscara de esquinas redondeadas (4 bordes)
@@ -291,19 +292,19 @@ class PdfGeneratorService:
         ies_lines = cls._wrap_two_lines(val_ies, max_chars=31)
 
         if len(nombre_lines) == 1:
-            nombre_tspans = f'<tspan x="151" y="260">{nombre_lines[0]}</tspan>'
+            nombre_tspans = f'<tspan x="151" y="269">{nombre_lines[0]}</tspan>'
         else:
-            nombre_tspans = f'<tspan x="151" y="259">{nombre_lines[0]}</tspan><tspan x="151" y="273">{nombre_lines[1]}</tspan>'
+            nombre_tspans = f'<tspan x="151" y="268">{nombre_lines[0]}</tspan><tspan x="151" y="282">{nombre_lines[1]}</tspan>'
 
         if len(ies_lines) == 1:
-            ies_tspans = f'<tspan x="151" y="322">{ies_lines[0]}</tspan>'
+            ies_tspans = f'<tspan x="151" y="327">{ies_lines[0]}</tspan>'
         else:
-            ies_tspans = f'<tspan x="151" y="321">{ies_lines[0]}</tspan><tspan x="151" y="335">{ies_lines[1]}</tspan>'
+            ies_tspans = f'<tspan x="151" y="326">{ies_lines[0]}</tspan><tspan x="151" y="340">{ies_lines[1]}</tspan>'
 
         # Fila Nombre / Cédula de Ciudadanía
         svg = re.sub(
             r'<text[^>]*>\s*<tspan[^>]*>Nombre</tspan>\s*</text>',
-            '<text fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="11"><tspan x="151" y="242">Nombre</tspan></text>',
+            '<text fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="11"><tspan x="151" y="252">Nombre</tspan></text>',
             svg
         )
 
@@ -315,20 +316,20 @@ class PdfGeneratorService:
 
         svg = re.sub(
             r'<text[^>]*>\s*<tspan[^>]*>C&#xe9;dula de Ciudadan&#xed;a</tspan>\s*</text>',
-            f'<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="11"><tspan x="458" y="242">{lbl_doc}</tspan></text>',
+            f'<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="11"><tspan x="458" y="252">{lbl_doc}</tspan></text>',
             svg
         )
 
         svg = re.sub(
             r'<text[^>]*>\s*<tspan[^>]*>1\.053\.892\.146</tspan>\s*</text>',
-            f'<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="13" font-weight="bold"><tspan x="458" y="260">{val_documento}</tspan></text>',
+            f'<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="13" font-weight="bold"><tspan x="458" y="269">{val_documento}</tspan></text>',
             svg
         )
 
         # Fila Institución de Educación Superior / Res. Inscripción
         svg = re.sub(
             r'<text[^>]*>\s*<tspan[^>]*>Instituci&#xf3;n de Educaci&#xf3;n Superior</tspan>\s*</text>',
-            f'<text fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="11"><tspan x="151" y="304">{lbl_ies}</tspan></text>',
+            f'<text fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="11"><tspan x="151" y="310">{lbl_ies}</tspan></text>',
             svg
         )
 
@@ -340,13 +341,13 @@ class PdfGeneratorService:
 
         svg = re.sub(
             r'<text[^>]*>\s*<tspan[^>]*>Res\. Inscripci&#xf3;n</tspan>\s*</text>',
-            '<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="11"><tspan x="458" y="304">Res. Inscripci&#xf3;n</tspan></text>',
+            '<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="11"><tspan x="458" y="310">Res. Inscripci&#xf3;n</tspan></text>',
             svg
         )
 
         svg = re.sub(
             r'<text[^>]*>\s*<tspan[^>]*>289</tspan>\s*</text>',
-            f'<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="13" font-weight="bold"><tspan x="458" y="322">{val_resolucion}</tspan></text>',
+            f'<text text-anchor="end" fill="#091640" style="white-space: pre" xml:space="preserve" font-family="Satoshi Variable" font-size="13" font-weight="bold"><tspan x="458" y="327">{val_resolucion}</tspan></text>',
             svg
         )
 
@@ -387,7 +388,7 @@ class PdfGeneratorService:
             svg
         )
 
-        # 8. Preparar Foto del titular con esquinas redondeadas (o avatar neutro por defecto si no tiene foto)
+        # 8. Preparar Foto del titular (~30% más grande: 115 x 146 pt) con esquinas redondeadas
         photo_bytes = None
         if tarjeta.get("foto") and str(tarjeta.get("foto")).startswith("data:image"):
             try:
@@ -420,7 +421,7 @@ class PdfGeneratorService:
             svg = re.sub(r'<path[^>]*fill="white"[^>]*/>', '', svg)
             svg = re.sub(
                 r'<path[^>]*fill="url\(#pattern1_270_2849\)"[^>]*/>',
-                f'<image x="151" y="96.284" width="90" height="120" xlink:href="{foto_uri}"/>',
+                f'<image x="151" y="88" width="115" height="146" xlink:href="{foto_uri}"/>',
                 svg
             )
             svg = re.sub(r'<path[^>]*fill="url\(#pattern2_270_2849\)"[^>]*/>', '', svg)
