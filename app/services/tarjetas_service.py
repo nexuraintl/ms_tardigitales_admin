@@ -70,6 +70,24 @@ class TarjetasService:
             )
 
         if not result or not result.get("encontrado") or not result.get("data"):
+            # Respaldo: Buscar si existe en la base de datos local
+            try:
+                local_search = await self.repository.get_all(
+                    tipo_tarjeta=tipo_tarjeta,
+                    client_id=client_id,
+                    texto=documento,
+                    page=1,
+                    page_size=5
+                )
+                if local_search and local_search.get("data"):
+                    local_match = local_search["data"][0]
+                    return {
+                        "status": "success",
+                        "data": local_match
+                    }
+            except Exception as e_local:
+                print(f"[TarjetasService] Fallback local search error: {e_local}")
+
             raise PipelineException(
                 etapa="CONSULTA_API_JCC",
                 mensaje="No se encontró ningún registro oficial para el documento especificado en la JCC.",

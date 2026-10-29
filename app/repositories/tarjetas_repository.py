@@ -2472,7 +2472,9 @@ class TarjetasRepository:
                         SUM(CASE WHEN LOWER(estado) = 'activa' THEN 1 ELSE 0 END) as activa,
                         SUM(CASE WHEN LOWER(estado) = 'emitida' THEN 1 ELSE 0 END) as emitida,
                         SUM(CASE WHEN LOWER(estado) = 'cancelada' THEN 1 ELSE 0 END) as cancelada,
-                        SUM(CASE WHEN LOWER(estado) = 'fallecido' THEN 1 ELSE 0 END) as fallecido,
+                        SUM(CASE WHEN LOWER(IFNULL(estado_contador, '')) = 'activo' THEN 1 ELSE 0 END) as reg_activo,
+                        SUM(CASE WHEN LOWER(IFNULL(estado_contador, '')) = 'cancelada' THEN 1 ELSE 0 END) as reg_cancelada,
+                        SUM(CASE WHEN LOWER(IFNULL(estado_contador, '')) = 'fallecido' THEN 1 ELSE 0 END) as reg_fallecido,
                         DATE_FORMAT(MAX(fecha_emision), '%%d/%%m/%%Y %%h:%%i %%p') as ultima_fecha
                     FROM tn_tarjetavirtual_contadores
                     {clause_cont}
@@ -2499,6 +2501,9 @@ class TarjetasRepository:
                         SUM(CASE WHEN LOWER(estado) = 'activa' THEN 1 ELSE 0 END) as activa,
                         SUM(CASE WHEN LOWER(estado) = 'emitida' THEN 1 ELSE 0 END) as emitida,
                         SUM(CASE WHEN LOWER(estado) = 'cancelada' THEN 1 ELSE 0 END) as cancelada,
+                        SUM(CASE WHEN LOWER(IFNULL(estado_sociedad, '')) = 'activo' THEN 1 ELSE 0 END) as reg_activo,
+                        SUM(CASE WHEN LOWER(IFNULL(estado_sociedad, '')) = 'cancelada' THEN 1 ELSE 0 END) as reg_cancelada,
+                        0 as reg_fallecido,
                         DATE_FORMAT(MAX(fecha_emision), '%%d/%%m/%%Y %%h:%%i %%p') as ultima_fecha
                     FROM tn_tarjetavirtual_sociedades
                     {clause_soc}
@@ -2543,19 +2548,25 @@ class TarjetasRepository:
                     c_act = int(cont.get("activa") or 0)
                     c_emi = int(cont.get("emitida") or 0)
                     c_can = int(cont.get("cancelada") or 0)
-                    c_fal = int(cont.get("fallecido") or 0)
+                    r_act = int(cont.get("reg_activo") or 0)
+                    r_can = int(cont.get("reg_cancelada") or 0)
+                    r_fal = int(cont.get("reg_fallecido") or 0)
                     total_segmento = c_tot
                 elif segmento == "companies":
                     c_act = int(soc.get("activa") or 0)
                     c_emi = int(soc.get("emitida") or 0)
                     c_can = int(soc.get("cancelada") or 0)
-                    c_fal = 0
+                    r_act = int(soc.get("reg_activo") or 0)
+                    r_can = int(soc.get("reg_cancelada") or 0)
+                    r_fal = 0
                     total_segmento = s_tot
                 else:
                     c_act = int(cont.get("activa") or 0) + int(soc.get("activa") or 0)
                     c_emi = int(cont.get("emitida") or 0) + int(soc.get("emitida") or 0)
                     c_can = int(cont.get("cancelada") or 0) + int(soc.get("cancelada") or 0)
-                    c_fal = int(cont.get("fallecido") or 0)
+                    r_act = int(cont.get("reg_activo") or 0) + int(soc.get("reg_activo") or 0)
+                    r_can = int(cont.get("reg_cancelada") or 0) + int(soc.get("reg_cancelada") or 0)
+                    r_fal = int(cont.get("reg_fallecido") or 0)
                     total_segmento = cards_total
 
                 n_tot = int(notif.get("total") or 0)
@@ -2604,7 +2615,13 @@ class TarjetasRepository:
                         "activa": c_act,
                         "emitida": c_emi,
                         "cancelada": c_can,
-                        "fallecido": c_fal,
+                        "fallecido": r_fal,
+                        "registro_activo": r_act,
+                        "registro_cancelada": r_can,
+                        "registro_fallecido": r_fal,
+                        "tarjeta_activa": c_act,
+                        "tarjeta_cancelada": c_can,
+                        "tarjeta_emitida": c_emi,
                         "contadores_total": c_tot,
                         "contadores_pct": pct_cont,
                         "sociedades_total": s_tot,
