@@ -187,10 +187,14 @@ class TarjetasService:
         tarjeta_sanitizada = dict(tarjeta)
 
         def is_visible(canonical_key: str, legacy_key: Optional[str] = None) -> bool:
-            if canonical_key in cfg and cfg[canonical_key] is not None:
-                return bool(cfg[canonical_key])
-            if legacy_key and legacy_key in cfg and cfg[legacy_key] is not None:
-                return bool(cfg[legacy_key])
+            v_can = cfg.get(canonical_key) if canonical_key in cfg else None
+            v_leg = cfg.get(legacy_key) if (legacy_key and legacy_key in cfg) else None
+            if v_can is not None and v_leg is not None:
+                return bool(v_can or v_leg)
+            if v_can is not None:
+                return bool(v_can)
+            if v_leg is not None:
+                return bool(v_leg)
             return True
 
         if is_sociedad:
@@ -785,16 +789,35 @@ class TarjetasService:
                 )
 
             # Inyectar la configuración institucional vigente (Nombre, Cargo y Firma del Director General)
+            nombre_director = result.get("nombre_director") or "SANDRA MILENA BARRIOS PULIDO"
+            cargo_director = "DIRECTOR GENERAL"
+            firma_director = result.get("firma_director")
+
             try:
-                institucional = await self.repository.get_institucional_published(client_id)
-                if institucional:
-                    result["nombre_director"] = institucional.get("nombre_director") or result.get("nombre_director") or "SANDRA MILENA BARRIOS PULIDO"
-                    result["cargo_director"] = institucional.get("cargo_director") or "DIRECTOR GENERAL"
-                    result["firma_director"] = institucional.get("firma_director") or result.get("firma_director")
+                institucional_resp = await self.get_institucional_published(client_id)
+                institucional_data = institucional_resp.get("data") if isinstance(institucional_resp, dict) else None
+                if institucional_data:
+                    nombre_director = institucional_data.get("nombre_director") or nombre_director
+                    cargo_director = institucional_data.get("cargo_director") or cargo_director
+                    firma_director = institucional_data.get("firma_director") or firma_director
             except Exception as e_inst:
                 print(f"[TarjetasService] Advertencia al combinar datos institucionales en get_branding_credentials_publish: {e_inst}")
 
-            return result
+            return {
+                "tipo_id": result.get("tipo_id"),
+                "version": result.get("version"),
+                "color_fondo": result.get("color_fondo"),
+                "color_letra": result.get("color_letra"),
+                "color_letra_impresion": result.get("color_letra_impresion") or "#0f172a",
+                "logo": result.get("logo"),
+                "patron": result.get("patron"),
+                "logo_impresion": result.get("logo_impresion"),
+                "patron_impresion": result.get("patron_impresion"),
+                "nombre_director": nombre_director,
+                "cargo_director": cargo_director,
+                "firma_director": firma_director,
+                "observacion": result.get("observacion")
+            }
         except PipelineException:
             raise
         except Exception as e:
@@ -927,19 +950,24 @@ class TarjetasService:
         try:
             result = await self.repository.get_institucional_published(client_id)
             if not result:
-                result = {
-                    "id": 1,
+                clean_data = {
                     "nombre_director": "SANDRA MILENA BARRIOS PULIDO",
                     "cargo_director": "DIRECTOR GENERAL",
                     "firma_director": None,
                     "version": 1,
-                    "publicado": 1,
-                    "observacion": None,
-                    "created_at_formatted": None
+                    "observacion": None
+                }
+            else:
+                clean_data = {
+                    "nombre_director": result.get("nombre_director") or "SANDRA MILENA BARRIOS PULIDO",
+                    "cargo_director": result.get("cargo_director") or "DIRECTOR GENERAL",
+                    "firma_director": result.get("firma_director"),
+                    "version": result.get("version") or 1,
+                    "observacion": result.get("observacion")
                 }
             return {
                 "status": "success",
-                "data": result
+                "data": clean_data
             }
         except Exception as e:
             print(f"[TarjetasService] Error al consultar configuración institucional: {e}")
