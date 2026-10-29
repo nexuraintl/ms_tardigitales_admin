@@ -124,34 +124,33 @@ class PdfGeneratorService:
         return [line1, rest]
 
     @classmethod
-    def _prepare_rounded_photo(cls, raw_bytes: bytes) -> str:
+    def _prepare_rounded_photo(cls, raw_bytes: bytes, bg_crop: PILImage.Image = None) -> str:
         """
         Ajusta la foto a proporción 115x146 pt (~30% más grande que 90x120 pt) sin estirarla (recorte centrado),
-        aplica esquinas redondeadas con borde sutil visible incluso si el fondo de la foto es blanco,
-        y preserva transparencia exterior (PNG RGBA) sobre la textura de la tarjeta.
+        con esquinas redondeadas limpias (antialiasing 4x) y sin ningún borde adicional.
         """
         im = PILImage.open(io.BytesIO(raw_bytes)).convert("RGBA")
-        target_size = (460, 584)  # 115 x 146 pt @ 4x (~28-30% más grande que 90 x 120 pt)
+        target_size = (460, 584)  # 115 x 146 pt @ 4x
         radius = 56               # 14 pt @ 4x
 
         # Recorte inteligente sin deformar ni estirar (centrado horizontal, ligeramente superior para rostros)
         im = PILImageOps.fit(im, target_size, method=PILImage.Resampling.LANCZOS, centering=(0.5, 0.35))
 
-        # Máscara de esquinas redondeadas (4 bordes)
-        mask = PILImage.new("L", target_size, 0)
-        draw_mask = PILImageDraw.Draw(mask)
-        draw_mask.rounded_rectangle([(0, 0), (target_size[0] - 1, target_size[1] - 1)], radius=radius, fill=255)
-
-        # Contorno sutil (#CBD5E1) para delimitar los bordes redondeados superiores cuando la foto tiene fondo blanco
-        draw_img = PILImageDraw.Draw(im)
-        draw_img.rounded_rectangle(
-            [(1, 1), (target_size[0] - 2, target_size[1] - 2)],
-            radius=radius,
-            outline=(203, 213, 225, 255),
-            width=4
+        # Máscara de esquinas redondeadas con supersampling 4x para bordes completamente limpios y suaves
+        ss = 4
+        mask_hi = PILImage.new("L", (target_size[0] * ss, target_size[1] * ss), 0)
+        draw_mask = PILImageDraw.Draw(mask_hi)
+        draw_mask.rounded_rectangle(
+            [(0, 0), (target_size[0] * ss - 1, target_size[1] * ss - 1)],
+            radius=radius * ss,
+            fill=255
         )
+        mask = mask_hi.resize(target_size, PILImage.Resampling.LANCZOS)
 
-        out = PILImage.new("RGBA", target_size, (255, 255, 255, 0))
+        if bg_crop is not None:
+            out = bg_crop.resize(target_size, PILImage.Resampling.LANCZOS).convert("RGBA")
+        else:
+            out = PILImage.new("RGBA", target_size, (255, 255, 255, 0))
         out.paste(im, (0, 0), mask=mask)
 
         buf = io.BytesIO()
@@ -363,6 +362,9 @@ class PdfGeneratorService:
 <clipPath id="card_clip">
   <rect x="135" y="12" width="342" height="361.284" rx="24"/>
 </clipPath>
+<clipPath id="photo_clip">
+  <rect x="151" y="88" width="115" height="146" rx="14"/>
+</clipPath>
 '''
         svg = svg.replace('<defs>', card_clip_def, 1)
 
@@ -417,7 +419,17 @@ class PdfGeneratorService:
                 photo_bytes = cls._generate_default_avatar_bytes()
 
         if photo_bytes:
-            foto_uri = cls._prepare_rounded_photo(photo_bytes)
+            bg_crop = None
+            if pattern_bytes:
+                try:
+                    pat_im = PILImage.open(io.BytesIO(pattern_bytes)).convert("L").resize((1368, 1445), PILImage.Resampling.LANCZOS)
+                    white_bg = PILImage.new("L", pat_im.size, 255)
+                    card_bg = PILImage.blend(white_bg, pat_im, alpha=0.04).convert("RGBA")
+                    # Recorte exacto de la zona de la foto (x=151..266, y=88..234 relativo a la tarjeta x=135, y=12 @ 4x)
+                    bg_crop = card_bg.crop((64, 304, 524, 888))
+                except Exception:
+                    bg_crop = None
+            foto_uri = cls._prepare_rounded_photo(photo_bytes, bg_crop=bg_crop)
             svg = re.sub(r'<path[^>]*fill="white"[^>]*/>', '', svg)
             svg = re.sub(
                 r'<path[^>]*fill="url\(#pattern1_270_2849\)"[^>]*/>',
