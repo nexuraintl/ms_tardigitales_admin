@@ -118,7 +118,7 @@ async def get_tarjeta_by_hash(
     hash: str = Path(..., min_length=10, max_length=64, description="Hash SHA-256 canónico de la tarjeta"),
     tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
-    sanitizar: bool = Query(True, description="Si es True, aplica los filtros de visibilidad del validador QR"),
+    sanitizar: bool = Query(False, description="Si es True, aplica los filtros de visibilidad del validador QR (por defecto False para App Movil e integraciones)"),
 ):
     ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
     if ip and "," in ip:
@@ -133,7 +133,7 @@ async def verificar_tarjeta_query(
     hash: Optional[str] = Query(None, description="Hash SHA-256 alternativo de la tarjeta"),
     tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
-    sanitizar: bool = Query(True, description="Si es True, aplica los filtros de visibilidad del validador QR"),
+    sanitizar: bool = Query(False, description="Si es True, aplica los filtros de visibilidad del validador QR (por defecto False para App Movil e integraciones)"),
 ):
     target_hash = token or hash
     if not target_hash:
