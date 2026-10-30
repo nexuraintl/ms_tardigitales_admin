@@ -25,7 +25,7 @@ async def list_tarjetas(
     tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
     page: int = Query(1, ge=1, description="Número de página a consultar"),
-    page_size: int = Query(10, ge=1, le=100, description="Cantidad de registros por página (máx 100)"),
+    page_size: int = Query(10, ge=1, le=50000, description="Cantidad de registros por página (máx 50000)"),
     texto: Optional[str] = Query(None, description="Búsqueda general por nombre completo, tarjeta profesional, expediente, documento o correo"),
     filtro_documento: Optional[str] = Query(None, description="Documento (contadores) o NIT (sociedades)"),
     filtro_expediente: Optional[str] = Query(None, description="Número de expediente"),
@@ -35,7 +35,23 @@ async def list_tarjetas(
     filtro_inscripcion: Optional[str] = Query(None, description="Inscripción (solo sociedades)"),
     filtro_correo: Optional[str] = Query(None, description="Correo electrónico"),
     order_by: Optional[str] = Query(None, description="Campo por el cual ordenar (ej: nombre_completo, fecha_emision)"),
-    order_dir: str = Query("DESC", pattern="^(ASC|DESC)$", description="Dirección del ordenamiento: ASC o DESC")
+    order_dir: str = Query("DESC", pattern="^(ASC|DESC)$", description="Dirección del ordenamiento: ASC o DESC"),
+    fecha_resolucion_desde: Optional[str] = Query(None, description="Fecha de resolución inicial (YYYY-MM-DD)"),
+    fecha_resolucion_hasta: Optional[str] = Query(None, description="Fecha de resolución final (YYYY-MM-DD)"),
+    fecha_emision_desde: Optional[str] = Query(None, description="Fecha de emisión inicial (YYYY-MM-DD)"),
+    fecha_emision_hasta: Optional[str] = Query(None, description="Fecha de emisión final (YYYY-MM-DD)"),
+    fecha_radicacion_desde: Optional[str] = Query(None, description="Fecha de radicación inicial (YYYY-MM-DD)"),
+    fecha_radicacion_hasta: Optional[str] = Query(None, description="Fecha de radicación final (YYYY-MM-DD)"),
+    fecha_estado_desde: Optional[str] = Query(None, description="Fecha de estado inicial (YYYY-MM-DD)"),
+    fecha_estado_hasta: Optional[str] = Query(None, description="Fecha de estado final (YYYY-MM-DD)"),
+    fecha_grado_desde: Optional[str] = Query(None, description="Fecha de grado inicial (YYYY-MM-DD)"),
+    fecha_grado_hasta: Optional[str] = Query(None, description="Fecha de grado final (YYYY-MM-DD)"),
+    fecha_activacion_desde: Optional[str] = Query(None, description="Fecha de activación inicial (YYYY-MM-DD)"),
+    fecha_activacion_hasta: Optional[str] = Query(None, description="Fecha de activación final (YYYY-MM-DD)"),
+    estado_tarjeta: Optional[str] = Query(None, description="Estado de la tarjeta"),
+    estado_contador: Optional[str] = Query(None, description="Estado del contador"),
+    estado_sociedad: Optional[str] = Query(None, description="Estado de la sociedad"),
+    tipo_asociado: Optional[str] = Query(None, description="Tipo de trámite / asociado")
 ):
     
     filtros = {
@@ -46,7 +62,23 @@ async def list_tarjetas(
         "acta_jcc": filtro_acta_jcc,
         "no_tarjeta": filtro_no_tarjeta,
         "inscripcion": filtro_inscripcion,
-        "correo": filtro_correo
+        "correo": filtro_correo,
+        "fecha_resolucion_desde": fecha_resolucion_desde,
+        "fecha_resolucion_hasta": fecha_resolucion_hasta,
+        "fecha_emision_desde": fecha_emision_desde,
+        "fecha_emision_hasta": fecha_emision_hasta,
+        "fecha_radicacion_desde": fecha_radicacion_desde,
+        "fecha_radicacion_hasta": fecha_radicacion_hasta,
+        "fecha_estado_desde": fecha_estado_desde,
+        "fecha_estado_hasta": fecha_estado_hasta,
+        "fecha_grado_desde": fecha_grado_desde,
+        "fecha_grado_hasta": fecha_grado_hasta,
+        "fecha_activacion_desde": fecha_activacion_desde,
+        "fecha_activacion_hasta": fecha_activacion_hasta,
+        "estado_tarjeta": estado_tarjeta,
+        "estado_contador": estado_contador,
+        "estado_sociedad": estado_sociedad,
+        "tipo_asociado": tipo_asociado
     }
     
     return await service.list_tarjetas(
@@ -327,7 +359,7 @@ async def publish_institucional_version(
 async def list_auditoria_api(
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
     page: int = Query(1, ge=1, description="Número de página a consultar"),
-    page_size: int = Query(10, ge=1, le=100, description="Cantidad de registros por página (máx 100)"),
+    page_size: int = Query(10, ge=1, le=50000, description="Cantidad de registros por página (máx 50000)"),
     fecha_desde: Optional[str] = Query(None, description="Fecha y hora desde (YYYY-MM-DD HH:MM)"),
     fecha_hasta: Optional[str] = Query(None, description="Fecha y hora hasta (YYYY-MM-DD HH:MM)"),
     endpoint: Optional[str] = Query(None, description="Filtro por endpoint (contadores, sociedades)"),
