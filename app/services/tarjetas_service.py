@@ -6,6 +6,7 @@ from datetime import datetime
 from app.repositories.tarjetas_repository import TarjetasRepository
 from app.schemas.tarjetas_schema import (
     ActivacionMovilRequestSchema,
+    RegistroLecturaRequestSchema,
     TarjetaCreateSchema,
     ValidadorConfigSchema,
     BrandingCredentialsCreateSchema,
@@ -262,7 +263,15 @@ class TarjetasService:
 
         return tarjeta_sanitizada
 
-    async def get_tarjeta_by_hash(self, hash_sha256: str, tipo_tarjeta: Optional[str] = None, client_id: Optional[int] = None, sanitizar: bool = True) -> Dict[str, Any]:
+    async def get_tarjeta_by_hash(
+        self,
+        hash_sha256: str,
+        tipo_tarjeta: Optional[str] = None,
+        client_id: Optional[int] = None,
+        sanitizar: bool = True,
+        ip: Optional[str] = None,
+        auto_log: bool = False
+    ) -> Dict[str, Any]:
         try:
             tarjeta = await self.repository.get_by_hash(hash_sha256, tipo_tarjeta, client_id)
             if not tarjeta:
@@ -272,6 +281,23 @@ class TarjetasService:
                     cliente_id=client_id,
                     status_code=status.HTTP_404_NOT_FOUND
                 )
+            if auto_log:
+                try:
+                    doc = str(tarjeta.get("no_documento") or tarjeta.get("nit") or "")
+                    if doc:
+                        import asyncio
+                        asyncio.create_task(
+                            self.repository.registrar_lectura(
+                                documento_consultado=doc,
+                                documento_consultor=None,
+                                origen="Navegador web",
+                                ip=ip,
+                                client_id=client_id
+                            )
+                        )
+                except Exception as e_log:
+                    print(f"[TarjetasService] Advertencia auto-registro lectura web: {e_log}")
+
             if sanitizar:
                 tarjeta = await self.sanitizar_tarjeta_validador(tarjeta, client_id)
             return tarjeta
@@ -1206,6 +1232,81 @@ class TarjetasService:
             raise PipelineException(
                 etapa="REPORTES_DASHBOARD",
                 mensaje="No fue posible obtener las métricas del reporte dashboard.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    async def registrar_lectura(
+        self,
+        payload: RegistroLecturaRequestSchema,
+        ip: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Registra un evento de lectura QR clasificando origen móvil vs web (HU: Gestión de Registro y Consulta de Auditoría)."""
+        try:
+            # Clasificación automática de origen (HU: Dispositivo móvil vs Navegador web)
+            if payload.origen:
+                origen = payload.origen
+            elif payload.tipo_qr and payload.tipo_qr.lower() == "estatico":
+                origen = "Navegador web"
+            else:
+                origen = "Dispositivo móvil"
+
+            resultado = await self.repository.registrar_lectura(
+                documento_consultado=payload.documento_consultado,
+                documento_consultor=payload.documento_consultor,
+                origen=origen,
+                ip=ip,
+                client_id=payload.client_id
+            )
+            return {
+                "success": True,
+                "mensaje": "Lectura registrada exitosamente.",
+                "data": resultado
+            }
+        except PipelineException:
+            raise
+        except Exception as e:
+            print(f"[TarjetasService] Error al registrar lectura QR: {e}")
+            raise PipelineException(
+                etapa="REGISTRO_LECTURA",
+                mensaje="No fue posible registrar el evento de lectura QR.",
+                detalle_tecnico=str(e),
+                cliente_id=payload.client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    async def get_historial_lecturas(
+        self,
+        documento: str,
+        filtro: str = "me_consultaron",
+        limit: int = 20,
+        offset: int = 0,
+        client_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Consulta el historial de lecturas según documento del usuario (App Móvil 14:09)."""
+        try:
+            filtro_norm = "mis_consultas" if str(filtro).lower() == "mis_consultas" else "me_consultaron"
+            items, total = await self.repository.get_historial_lecturas_usuario(
+                documento=str(documento).strip(),
+                filtro=filtro_norm,
+                limit=limit,
+                offset=offset,
+                client_id=client_id
+            )
+            return {
+                "success": True,
+                "filtro": filtro_norm,
+                "total": total,
+                "data": items
+            }
+        except PipelineException:
+            raise
+        except Exception as e:
+            print(f"[TarjetasService] Error al consultar historial de lecturas: {e}")
+            raise PipelineException(
+                etapa="CONSULTA_HISTORIAL_LECTURAS",
+                mensaje=f"No fue posible consultar el historial de lecturas para el documento {documento}.",
                 detalle_tecnico=str(e),
                 cliente_id=client_id,
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
