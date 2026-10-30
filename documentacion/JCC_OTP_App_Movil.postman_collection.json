@@ -1,0 +1,164 @@
+{
+  "info": {
+    "_postman_id": "a9c7b2e1-45f8-4e92-b912-349f7b1d98e0",
+    "name": "JCC Tarjetas Digitales - Flujo OTP Móvil",
+    "description": "Colección de pruebas para los endpoints de Generación y Validación de OTP para el enrolamiento en la App Móvil (Wallet JCC).\n\nFlujo de entrada:\n1. La App escanea el código QR -> Obtiene el 'hash'.\n2. El usuario digita su número de 'expediente'.\n3. Se solicita el OTP enviando únicamente {'hash', 'expediente'}.\n4. El backend verifica coincidencia, extrae el correo oficial y genera el código OTP.\n5. El usuario digita el código de 6 dígitos recibido -> Se valida con {'hash', 'token'}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01 - Solicitar OTP (Hash + Expediente)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"hash\": \"fb98bcc7ef3167edae16559c4d04b1ffe663735108db2bad5ff6c741b1ef6898\",\n  \"expediente\": \"375883\",\n  \"client_id\": 20001\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/otp/solicitar",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "apig",
+            "tardigitales",
+            "admin",
+            "tarjetas",
+            "otp",
+            "solicitar"
+          ]
+        },
+        "description": "Genera el OTP para el titular tras validar que el número de expediente corresponda a la tarjeta (hash) escaneada en el código QR."
+      },
+      "response": []
+    },
+    {
+      "name": "02 - Solicitar OTP (Expediente Errado - Caso 400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"hash\": \"fb98bcc7ef3167edae16559c4d04b1ffe663735108db2bad5ff6c741b1ef6898\",\n  \"expediente\": \"999999\",\n  \"client_id\": 20001\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/otp/solicitar",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "apig",
+            "tardigitales",
+            "admin",
+            "tarjetas",
+            "otp",
+            "solicitar"
+          ]
+        },
+        "description": "Prueba de discrepancia: cuando el usuario digita un expediente incorrecto para la tarjeta escaneada, rechaza con HTTP 400."
+      },
+      "response": []
+    },
+    {
+      "name": "03 - Validar OTP (Código Correcto)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"hash\": \"fb98bcc7ef3167edae16559c4d04b1ffe663735108db2bad5ff6c741b1ef6898\",\n  \"token\": \"{{otp_token}}\",\n  \"client_id\": 20001\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/otp/validar",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "apig",
+            "tardigitales",
+            "admin",
+            "tarjetas",
+            "otp",
+            "validar"
+          ]
+        },
+        "description": "Valida el código de 6 dígitos ingresado por el usuario para la tarjeta referenciada."
+      },
+      "response": []
+    },
+    {
+      "name": "04 - Validar OTP (Código Incorrecto - Caso 400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"hash\": \"fb98bcc7ef3167edae16559c4d04b1ffe663735108db2bad5ff6c741b1ef6898\",\n  \"token\": \"000000\",\n  \"client_id\": 20001\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/otp/validar",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "apig",
+            "tardigitales",
+            "admin",
+            "tarjetas",
+            "otp",
+            "validar"
+          ]
+        },
+        "description": "Prueba de caso negativo: envía un código erróneo para comprobar la respuesta HTTP 400 de rechazo."
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://local-jcc.nexura.com.co"
+    },
+    {
+      "key": "otp_token",
+      "value": "206549"
+    }
+  ]
+}
