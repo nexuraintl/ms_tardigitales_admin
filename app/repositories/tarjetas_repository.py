@@ -2,7 +2,9 @@ import aiomysql
 import json
 import math
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+COLOMBIA_TZ = timezone(timedelta(hours=-5))
 from typing import List, Dict, Any, Optional, Tuple
 from app.core.database import get_client_connection
 
@@ -408,29 +410,7 @@ class TarjetasRepository:
                 )
                 estados = await cursor.fetchall()
 
-                # 2. Obtener lecturas QR
-                try:
-                    await cursor.execute(
-                        """
-                        SELECT
-                            id,
-                            tarjeta_id,
-                            endpoint,
-                            metodo,
-                            codigo_http,
-                            ip,
-                            DATE_FORMAT(fecha, '%%Y-%%m-%%d %%H:%%i') AS fecha
-                        FROM tn_tarjetavirtual_lecturas_historial
-                        WHERE tarjeta_id = %s
-                        ORDER BY id DESC
-                        """,
-                        (tarjeta_id,)
-                    )
-                    lecturas = await cursor.fetchall()
-                except Exception:
-                    lecturas = []
-
-                # 3. Intentar obtener datos básicos de la tarjeta (Contadores o Sociedades según tipo)
+                # 2. Intentar obtener datos básicos de la tarjeta (Contadores o Sociedades según tipo)
                 tarjeta = None
                 if tipo and (tipo.lower() == 'sociedad' or tipo.lower() == 'sociedades'):
                     await cursor.execute(
@@ -510,6 +490,33 @@ class TarjetasRepository:
                         (tarjeta_id,)
                     )
                     tarjeta = await cursor.fetchone()
+
+                # 3. Obtener lecturas QR según documento del titular
+                lecturas = []
+                try:
+                    doc_consultado = str(tarjeta.get("no_documento") or tarjeta.get("nit") or "") if tarjeta else ""
+                    if doc_consultado:
+                        await cursor.execute(
+                            """
+                            SELECT
+                                id,
+                                documento_consultado,
+                                documento_consultor,
+                                origen,
+                                origen AS dispositivo,
+                                ip,
+                                DATE_FORMAT(fecha, '%%Y-%%m-%%d %%H:%%i') AS fecha
+                            FROM tn_tarjetavirtual_lecturas_historial
+                            WHERE documento_consultado = %s
+                            ORDER BY id DESC
+                            LIMIT 50
+                            """,
+                            (doc_consultado,)
+                        )
+                        lecturas = await cursor.fetchall()
+                except Exception as e_lec:
+                    print(f"[TarjetasRepository] Error consultando lecturas QR para {tarjeta_id}: {e_lec}")
+                    lecturas = []
 
                 # Si no hay estados explícitos aún para este ID, generar registro inicial de emisión
                 if not estados:
@@ -2706,5 +2713,114 @@ class TarjetasRepository:
                     await cursor.execute(query, (term_limpio, term, term))
                 
                 return await cursor.fetchone()
+        finally:
+            conn.close()
+
+    async def registrar_lectura(
+        self,
+        documento_consultado: str,
+        documento_consultor: Optional[str] = None,
+        origen: str = "Dispositivo móvil",
+        ip: Optional[str] = None,
+        client_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Registra un evento de lectura QR en el historial (HU: Gestión de Registro y Consulta de Auditoría)."""
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                doc_real = str(documento_consultado).strip()
+                # Si el documento parece un hash SHA-256 (>= 32 chars), resolver la cédula o NIT real
+                if len(doc_real) >= 32 and not doc_real.isdigit():
+                    await cursor.execute(
+                        """
+                        SELECT no_documento AS doc FROM tn_tarjetavirtual_contadores WHERE hash_sha256 = %s
+                        UNION
+                        SELECT nit AS doc FROM tn_tarjetavirtual_sociedades WHERE hash_sha256 = %s
+                        LIMIT 1
+                        """,
+                        (doc_real, doc_real)
+                    )
+                    found = await cursor.fetchone()
+                    if found and found.get("doc"):
+                        doc_real = str(found["doc"])
+
+                fecha_colombia = datetime.now(COLOMBIA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+                await cursor.execute(
+                    """
+                    INSERT INTO tn_tarjetavirtual_lecturas_historial (
+                        documento_consultado,
+                        documento_consultor,
+                        origen,
+                        ip,
+                        fecha
+                    ) VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (doc_real, documento_consultor, origen, ip, fecha_colombia)
+                )
+                await conn.commit()
+                nuevo_id = cursor.lastrowid
+                return {
+                    "id": nuevo_id,
+                    "documento_consultado": doc_real,
+                    "documento_consultor": documento_consultor,
+                    "origen": origen,
+                    "ip": ip
+                }
+        finally:
+            conn.close()
+
+    async def get_historial_lecturas_usuario(
+        self,
+        documento: str,
+        filtro: str = "me_consultaron",
+        limit: int = 20,
+        offset: int = 0,
+        client_id: Optional[int] = None
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """Consulta el historial de lecturas diferenciando 'me_consultaron' vs 'mis_consultas' (App Móvil)."""
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                campo_filtro = "documento_consultor" if filtro == "mis_consultas" else "documento_consultado"
+                
+                # 1. Total de registros
+                await cursor.execute(
+                    f"SELECT COUNT(*) AS total FROM tn_tarjetavirtual_lecturas_historial WHERE {campo_filtro} = %s",
+                    (documento,)
+                )
+                row_total = await cursor.fetchone()
+                total = row_total["total"] if row_total else 0
+
+                # 2. Registros paginados
+                await cursor.execute(
+                    f"""
+                    SELECT
+                        id,
+                        documento_consultado,
+                        documento_consultor,
+                        origen,
+                        ip,
+                        DATE_FORMAT(fecha, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha
+                    FROM tn_tarjetavirtual_lecturas_historial
+                    WHERE {campo_filtro} = %s
+                    ORDER BY fecha DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    (documento, limit, offset)
+                )
+                filas = await cursor.fetchall()
+
+                items = []
+                for f in filas:
+                    items.append({
+                        "id": f["id"],
+                        "documento_consultado": f["documento_consultado"],
+                        "documento_consultor": f.get("documento_consultor"),
+                        "origen": f["origen"],
+                        "fecha": f["fecha"],
+                        "ip": f.get("ip")
+                    })
+
+                return items, total
         finally:
             conn.close()

@@ -12,6 +12,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 
 -- 1. Limpieza de tarjetas e historial de cambios de estado
 TRUNCATE TABLE tn_tarjetavirtual_estados_historial;
+TRUNCATE TABLE tn_tarjetavirtual_lecturas_historial;
 TRUNCATE TABLE tn_tarjetavirtual_contadores;
 TRUNCATE TABLE tn_tarjetavirtual_sociedades;
 
