@@ -1,4 +1,4 @@
-# Documentación Técnica de Endpoints (01 a 04) - Microservicio Python FastAPI
+# Documentación Técnica de Endpoints (01 a 05) - Microservicio Python FastAPI
 
 > **Destinatario / Consumo:** Modelos de Inteligencia Artificial (Claude / LLM), Arquitectos de Software e Ingenieros Backend.  
 > **Servicio:** `ms_tardigitales_admin` (FastAPI + aiomysql + ReportLab / PyPDF / svglib).  
@@ -38,3 +38,13 @@ Al analizar, depurar, refactorizar o extender los endpoints de este microservici
 | **02** | `/apig/tardigitales/admin/tarjetas/activar-movil` | `POST` | `TarjetasService.activar_tarjeta_movil` <br> `TarjetasRepository.activar_dispositivo_movil` | [`02_ACTIVACION_TARJETA_MOVIL.md`](./02_ACTIVACION_TARJETA_MOVIL.md) |
 | **03** | `/apig/tardigitales/admin/tarjetas/branding-credentials/info-published/{id}` <br> `/apig/tardigitales/admin/tarjetas/branding-institucional/info-published` | `GET` | `TarjetasRepository.get_branding_credentials_public` <br> `TarjetasRepository.get_institucional_published` | [`03_BRANDING_CREDENCIALES_E_INSTITUCIONAL.md`](./03_BRANDING_CREDENCIALES_E_INSTITUCIONAL.md) |
 | **04** | `/apig/tardigitales/admin/tarjetas/verificar/{hash}/pdf` <br> `/apig/tardigitales/admin/tarjetas/pdf/{id}` | `GET` | `TarjetasService.generar_pdf_tarjeta_by_hash` <br> `PdfGeneratorService.generar_pdf_tarjeta` | [`04_EXPORTAR_PDF_COMPARTIR_TARJETA.md`](./04_EXPORTAR_PDF_COMPARTIR_TARJETA.md) |
+| **05** | `/apig/tardigitales/admin/tarjetas/lecturas/registrar` <br> `/apig/tardigitales/admin/tarjetas/lecturas/historial` | `POST` <br> `GET` | `TarjetasRepository.registrar_lectura` <br> `TarjetasRepository.get_historial_lecturas_usuario` | [`05_HISTORIAL_AUDITORIA_LECTURAS.md`](./05_HISTORIAL_AUDITORIA_LECTURAS.md) |
+
+---
+
+## 3. Manual Consolidado para Desarrollo Móvil (Wallet JCC)
+
+Para la integración de la aplicación móvil (Flutter / iOS / Android) con los endpoints oficiales de **Validación OTP**, **Branding Publicado** e **Historial de Auditoría de Lecturas QR**, consulte el manual unificado:
+
+👉 [`API_MOVIL_WALLET_JCC.md`](./API_MOVIL_WALLET_JCC.md) y la colección Postman [`JCC_OTP_App_Movil.postman_collection.json`](./JCC_OTP_App_Movil.postman_collection.json).
+

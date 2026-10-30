@@ -185,3 +185,25 @@ class ActivacionMovilRequestSchema(BaseModel):
     device_os: Optional[str] = Field(None, description="Plataforma del dispositivo: 'android' o 'ios'")
     device_modelo: Optional[str] = Field(None, description="Modelo del hardware (ej. 'Samsung Galaxy S23', 'iPhone 15 Pro')")
     app_version: Optional[str] = Field(None, description="Versión de la aplicación móvil instalada (ej. '1.0.0')")
+
+
+class RegistroLecturaRequestSchema(BaseModel):
+    documento_consultado: str = Field(..., description="Documento o NIT del titular consultado (o token/hash)")
+    documento_consultor: Optional[str] = Field(None, description="Documento del usuario que realiza la consulta (App Móvil)")
+    tipo_qr: Optional[str] = Field("dinamico", description="Tipo de QR escaneado: 'dinamico' (móvil) o 'estatico' (web)")
+    origen: Optional[str] = Field(None, description="Origen explícito ('Dispositivo móvil' o 'Navegador web')")
+    client_id: Optional[int] = Field(None, description="ID de la entidad cliente (opcional, default tenant)")
+
+class LecturaHistorialItemSchema(BaseModel):
+    id: int
+    documento_consultado: str
+    documento_consultor: Optional[str] = None
+    origen: str
+    fecha: str
+    ip: Optional[str] = None
+
+class ConsultaHistorialLecturasResponseSchema(BaseModel):
+    success: bool = True
+    filtro: str
+    total: int
+    data: List[LecturaHistorialItemSchema]
