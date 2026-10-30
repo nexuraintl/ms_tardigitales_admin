@@ -53,10 +53,11 @@ class TarjetasRepository:
         filtro_inscripcion: Optional[str] = None,  # Inscripción (solo sociedades)
         filtro_correo: Optional[str] = None,       # Correo electrónico
         order_by: Optional[str] = None,
-        order_dir: str = "DESC"
+        order_dir: str = "DESC",
+        extra_filters: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
 
-        page_size = min(max(page_size, 1), 100)
+        page_size = min(max(page_size, 1), 50000)
         page = max(page, 1)
         
         conn = await get_client_connection(client_id)
@@ -123,6 +124,48 @@ class TarjetasRepository:
                         conditions.append("ttc.correo LIKE %s")
                         params.append(f"%{filtro_correo}%")
 
+                    extra = extra_filters or {}
+                    if extra.get("fecha_resolucion_desde"):
+                        conditions.append("DATE(ttc.fecha_resolucion) >= %s")
+                        params.append(extra["fecha_resolucion_desde"])
+                    if extra.get("fecha_resolucion_hasta"):
+                        conditions.append("DATE(ttc.fecha_resolucion) <= %s")
+                        params.append(extra["fecha_resolucion_hasta"])
+                    if extra.get("fecha_emision_desde"):
+                        conditions.append("DATE(ttc.fecha_emision) >= %s")
+                        params.append(extra["fecha_emision_desde"])
+                    if extra.get("fecha_emision_hasta"):
+                        conditions.append("DATE(ttc.fecha_emision) <= %s")
+                        params.append(extra["fecha_emision_hasta"])
+                    if extra.get("fecha_radicacion_desde"):
+                        conditions.append("DATE(ttc.fecha_radicacion) >= %s")
+                        params.append(extra["fecha_radicacion_desde"])
+                    if extra.get("fecha_radicacion_hasta"):
+                        conditions.append("DATE(ttc.fecha_radicacion) <= %s")
+                        params.append(extra["fecha_radicacion_hasta"])
+                    if extra.get("fecha_estado_desde"):
+                        conditions.append("DATE(ttc.fecha_estado) >= %s")
+                        params.append(extra["fecha_estado_desde"])
+                    if extra.get("fecha_estado_hasta"):
+                        conditions.append("DATE(ttc.fecha_estado) <= %s")
+                        params.append(extra["fecha_estado_hasta"])
+                    if extra.get("fecha_grado_desde"):
+                        conditions.append("DATE(ttc.fecha_grado) >= %s")
+                        params.append(extra["fecha_grado_desde"])
+                    if extra.get("fecha_grado_hasta"):
+                        conditions.append("DATE(ttc.fecha_grado) <= %s")
+                        params.append(extra["fecha_grado_hasta"])
+                    if extra.get("estado_tarjeta"):
+                        conditions.append("LOWER(ttc.estado) = LOWER(%s)")
+                        params.append(extra["estado_tarjeta"])
+                    if extra.get("estado_contador"):
+                        conditions.append("LOWER(ttc.estado_contador) = LOWER(%s)")
+                        params.append(extra["estado_contador"])
+                    if extra.get("tipo_asociado"):
+                        t_asoc = extra["tipo_asociado"].strip()
+                        conditions.append("(LOWER(ttc.tipo_asociado) = LOWER(%s) OR (%s = 'primeraVez' AND (ttc.tipo_asociado IS NULL OR ttc.tipo_asociado = '')))")
+                        params.extend([t_asoc, t_asoc])
+
                     where_clause = " WHERE " + " AND ".join(conditions)
                     
                     # Columna de ordenamiento
@@ -171,6 +214,36 @@ class TarjetasRepository:
                     if filtro_inscripcion:
                         conditions.append("tts.inscripcion LIKE %s")
                         params.append(f"%{filtro_inscripcion}%")
+
+                    extra = extra_filters or {}
+                    if extra.get("fecha_resolucion_desde"):
+                        conditions.append("DATE(tts.fecha_resolucion) >= %s")
+                        params.append(extra["fecha_resolucion_desde"])
+                    if extra.get("fecha_resolucion_hasta"):
+                        conditions.append("DATE(tts.fecha_resolucion) <= %s")
+                        params.append(extra["fecha_resolucion_hasta"])
+                    if extra.get("fecha_emision_desde"):
+                        conditions.append("DATE(tts.fecha_emision) >= %s")
+                        params.append(extra["fecha_emision_desde"])
+                    if extra.get("fecha_emision_hasta"):
+                        conditions.append("DATE(tts.fecha_emision) <= %s")
+                        params.append(extra["fecha_emision_hasta"])
+                    if extra.get("fecha_radicacion_desde"):
+                        conditions.append("DATE(tts.fecha_radicacion) >= %s")
+                        params.append(extra["fecha_radicacion_desde"])
+                    if extra.get("fecha_radicacion_hasta"):
+                        conditions.append("DATE(tts.fecha_radicacion) <= %s")
+                        params.append(extra["fecha_radicacion_hasta"])
+                    if extra.get("estado_tarjeta"):
+                        conditions.append("LOWER(tts.estado) = LOWER(%s)")
+                        params.append(extra["estado_tarjeta"])
+                    if extra.get("estado_sociedad"):
+                        conditions.append("LOWER(tts.estado_sociedad) = LOWER(%s)")
+                        params.append(extra["estado_sociedad"])
+                    if extra.get("tipo_asociado"):
+                        t_asoc = extra["tipo_asociado"].strip()
+                        conditions.append("(LOWER(tts.tipo_asociado) = LOWER(%s) OR (%s = 'primeraVez' AND (tts.tipo_asociado IS NULL OR tts.tipo_asociado = '')))")
+                        params.extend([t_asoc, t_asoc])
 
                     where_clause = " WHERE " + " AND ".join(conditions)
                     order_column = columnas_permitidas.get(order_by, "tts.id")
@@ -946,7 +1019,7 @@ class TarjetasRepository:
         page_size: int = 10,
     ) -> Dict[str, Any]:
 
-        page_size = min(max(page_size, 1), 100)
+        page_size = min(max(page_size, 1), 50000)
         page = max(page, 1)
         offset = (page - 1) * page_size
 
@@ -1105,7 +1178,7 @@ class TarjetasRepository:
         page: int = 1,
         page_size: int = 10,
     ) -> Dict[str, Any]:
-        page_size = min(max(page_size, 1), 100)
+        page_size = min(max(page_size, 1), 50000)
         page = max(page, 1)
         offset = (page - 1) * page_size
 
@@ -1573,7 +1646,7 @@ class TarjetasRepository:
         cambiar_estado: Optional[str] = None,
     ) -> Dict[str, Any]:
         
-        page_size = min(max(page_size, 1), 100)
+        page_size = min(max(page_size, 1), 50000)
         page = max(page, 1)
         
         conn = await get_client_connection(client_id)
