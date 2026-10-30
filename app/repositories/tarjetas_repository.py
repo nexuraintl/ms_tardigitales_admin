@@ -2643,3 +2643,68 @@ class TarjetasRepository:
                 }
         finally:
             conn.close()
+
+
+    async def get_titular_otp(
+        self,
+        documento_o_expediente: str,
+        tipo_tarjeta: str = "contadores",
+        client_id: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Consulta los datos del titular para el flujo de emisión y validación de OTP.
+        Busca por número de documento, expediente o número de matrícula/tarjeta.
+        """
+        conn = await get_client_connection(client_id)
+        term = str(documento_o_expediente).strip()
+        term_limpio = "".join(ch for ch in term if ch.isalnum())
+
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                if tipo_tarjeta == "sociedades":
+                    query = """
+                        SELECT 
+                            tts.id,
+                            tts.nit AS documento,
+                            tts.inscripcion AS matricula,
+                            tts.no_expd AS expediente,
+                            tts.razon_social AS nombres,
+                            '' AS primer_apellido,
+                            '' AS segundo_apellido,
+                            tts.correo,
+                            tts.estado,
+                            tts.hash_sha256 AS token
+                        FROM tn_tarjetavirtual_sociedades tts
+                        WHERE tts.nit = %s 
+                           OR REPLACE(tts.nit, '-', '') = %s
+                           OR CAST(tts.no_expd AS CHAR) = %s
+                           OR tts.inscripcion = %s
+                        ORDER BY tts.id DESC
+                        LIMIT 1
+                    """
+                    await cursor.execute(query, (term, term_limpio, term, term))
+                else:
+                    query = """
+                        SELECT 
+                            ttc.id,
+                            ttc.no_documento AS documento,
+                            ttc.no_tarjeta AS matricula,
+                            ttc.no_expd AS expediente,
+                            ttc.nombres,
+                            ttc.primer_apellido,
+                            ttc.segundo_apellido,
+                            ttc.correo,
+                            ttc.estado,
+                            ttc.hash_sha256 AS token
+                        FROM tn_tarjetavirtual_contadores ttc
+                        WHERE ttc.no_documento = %s
+                           OR CAST(ttc.no_expd AS CHAR) = %s
+                           OR ttc.no_tarjeta = %s
+                        ORDER BY ttc.id DESC
+                        LIMIT 1
+                    """
+                    await cursor.execute(query, (term_limpio, term, term))
+                
+                return await cursor.fetchone()
+        finally:
+            conn.close()
