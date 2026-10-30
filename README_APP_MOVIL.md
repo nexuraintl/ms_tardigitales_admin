@@ -43,6 +43,8 @@ Todos los endpoints deben ser invocados anteponiendo el prefijo `/tardigitales/a
 
 | Método | Ruta Relativa | Parámetros Clave | Código Éxito | Función Técnica |
 | :---: | :--- | :--- | :---: | :--- |
+| `POST` | `/tarjetas/otp/solicitar` | Body JSON (`hash`, `expediente`) | `200 OK` | Valida coincidencia del expediente con el hash del QR y genera el OTP enmascarando el correo. |
+| `POST` | `/tarjetas/otp/validar` | Body JSON (`hash`, `token`) | `200 OK` | Valida el código OTP de 6 dígitos para la tarjeta referenciada por su hash antes de la activación. |
 | `GET` | `/tarjetas/verificar/{token}` | `token` en path (Hash SHA-256) | `200 OK` | Consulta técnica de los datos del contador/sociedad y estado de la tarjeta antes de activar. |
 | `POST` | `/tarjetas/activar-movil` | Body JSON (`token`, `fcm_token`, `device_id`, etc.) | `200 OK` | Transiciona el estado de `Emitida` a `Activa` y registra el dispositivo en la tabla satélite. |
 | `GET` | `/tarjetas/branding-credentials/info-published/{tipo_id}` | `tipo_id`: `1` (Contador) o `2` (Sociedad) | `200 OK` | Entrega los activos gráficos Base64 oficiales y colores de la tarjeta para visualización en pantalla. |
@@ -52,6 +54,75 @@ Todos los endpoints deben ser invocados anteponiendo el prefijo `/tardigitales/a
 ---
 
 ## 3. Especificación Técnica de los Endpoints
+
+
+### 3.0. Solicitud y Validación de OTP (Identidad en App Móvil)
+
+#### 3.0.1. Solicitar Código OTP
+Permite a la aplicación móvil solicitar el código temporal de verificación de identidad enviando **únicamente el hash** obtenido al escanear el código QR y el **número de expediente** digitado por el titular. El backend valida que el expediente pertenezca a la credencial, recupera el correo electrónico registrado y dispara la generación del código OTP.
+
+```http
+POST /tardigitales/admin/tarjetas/otp/solicitar HTTP/1.1
+Host: <host>
+Content-Type: application/json
+Accept: application/json
+
+{
+  "hash": "fb98bcc7ef3167edae16559c4d04b1ffe663735108db2bad5ff6c741b1ef6898",
+  "expediente": "375883"
+}
+```
+
+##### Respuesta Exitosa (`HTTP 200 OK`)
+```json
+{
+  "status": "success",
+  "message": "Código de verificación generado y despachado.",
+  "correo_enmascarado": "s***r@nexura.com",
+  "expira_en_minutos": 5
+}
+```
+
+---
+
+#### 3.0.2. Validar Código OTP
+Verifica si el código numérico de 6 dígitos ingresado por el titular en la aplicación móvil coincide con el OTP emitido para la credencial identificada por su `hash`.
+
+```http
+POST /tardigitales/admin/tarjetas/otp/validar HTTP/1.1
+Host: <host>
+Content-Type: application/json
+Accept: application/json
+
+{
+  "hash": "fb98bcc7ef3167edae16559c4d04b1ffe663735108db2bad5ff6c741b1ef6898",
+  "token": "573882"
+}
+```
+
+##### Respuesta Exitosa (`HTTP 200 OK`)
+```json
+{
+  "status": "success",
+  "validado": true,
+  "message": "Código OTP validado correctamente."
+}
+```
+
+##### Respuesta de Error (`HTTP 400 Bad Request`)
+```json
+{
+  "status": "error",
+  "code": 400,
+  "error": {
+    "codigo_error": 3899,
+    "etapa": "OTP_VALIDACION",
+    "mensaje": "Código de verificación incorrecto o expirado."
+  }
+}
+```
+
+---
 
 ### 3.1. Consulta de Credencial por Token
 Consulta el estado de una tarjeta a partir de su hash SHA-256 obtenido del código QR o enlace de activación.
