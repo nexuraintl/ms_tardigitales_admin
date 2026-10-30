@@ -5,6 +5,8 @@ from app.services.tarjetas_service import TarjetasService
 from app.utils.image_utils import ImageUtils
 from app.schemas.tarjetas_schema import (
     ActivacionMovilRequestSchema,
+    RegistroLecturaRequestSchema,
+    ConsultaHistorialLecturasResponseSchema,
     TarjetaCreateSchema,
     ValidadorConfigSchema,
     BrandingCredentialsCreateSchema,
@@ -86,11 +88,15 @@ async def get_tarjeta_by_hash(
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
     sanitizar: bool = Query(True, description="Si es True, aplica los filtros de visibilidad del validador QR"),
 ):
-    return await service.get_tarjeta_by_hash(hash, tipo_tarjeta, client_id, sanitizar=sanitizar)
+    ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+    if ip and "," in ip:
+        ip = ip.split(",")[0].strip()
+    return await service.get_tarjeta_by_hash(hash, tipo_tarjeta, client_id, sanitizar=sanitizar, ip=ip, auto_log=True)
 
 
 @router.get("/verificar")
 async def verificar_tarjeta_query(
+    request: Request,
     token: Optional[str] = Query(None, description="Token / Hash SHA-256 de la tarjeta"),
     hash: Optional[str] = Query(None, description="Hash SHA-256 alternativo de la tarjeta"),
     tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
@@ -103,7 +109,10 @@ async def verificar_tarjeta_query(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Debe suministrar el parámetro 'token' o 'hash' de la tarjeta a verificar."
         )
-    return await service.get_tarjeta_by_hash(target_hash, tipo_tarjeta, client_id, sanitizar=sanitizar)
+    ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+    if ip and "," in ip:
+        ip = ip.split(",")[0].strip()
+    return await service.get_tarjeta_by_hash(target_hash, tipo_tarjeta, client_id, sanitizar=sanitizar, ip=ip, auto_log=True)
 
 
 @router.get("/pdf/{id}")
@@ -511,5 +520,46 @@ async def get_reportes_dashboard(
         segmento=segmento,
         tipo_reporte=tipo_reporte,
         estado=estado,
+        client_id=client_id
+    )
+
+
+@router.post("/lecturas/registrar", status_code=status.HTTP_201_CREATED)
+async def registrar_lectura(
+    request: Request,
+    payload: RegistroLecturaRequestSchema = Body(..., description="Datos del evento de lectura QR"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente (opcional)")
+):
+    """
+    Registra un evento de lectura QR (HU: Gestión de Registro y Consulta de Auditoría).
+    - Clasifica automáticamente el origen: 'Dispositivo móvil' (QR dinámico 17:34) vs 'Navegador web' (QR estático 17:39).
+    - Almacena en tn_tarjetavirtual_lecturas_historial.
+    """
+    if client_id and not payload.client_id:
+        payload.client_id = client_id
+    ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+    if ip and "," in ip:
+        ip = ip.split(",")[0].strip()
+    return await service.registrar_lectura(payload, ip=ip)
+
+
+@router.get("/lecturas/historial")
+async def get_historial_lecturas(
+    documento: str = Query(..., min_length=3, description="Cédula o NIT del usuario"),
+    filtro: str = Query("me_consultaron", pattern="^(me_consultaron|mis_consultas)$", description="Filtro de consulta: 'me_consultaron' o 'mis_consultas'"),
+    limit: int = Query(20, ge=1, le=100, description="Cantidad máxima de registros a retornar"),
+    offset: int = Query(0, ge=0, description="Desplazamiento para paginación"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+):
+    """
+    Consulta el historial de lecturas QR según número de identificación del usuario (App Móvil 14:09).
+    - 'me_consultaron': Quién ha visto el perfil del usuario.
+    - 'mis_consultas': Lo que el usuario autenticado ha consultado a otros.
+    """
+    return await service.get_historial_lecturas(
+        documento=documento,
+        filtro=filtro,
+        limit=limit,
+        offset=offset,
         client_id=client_id
     )

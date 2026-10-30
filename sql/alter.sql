@@ -51,3 +51,16 @@ ALTER TABLE `tn_tarjetavirtual_configuracion_branding`
 
 ALTER TABLE `tn_tarjetavirtual_configuracion_institucional`
   ADD COLUMN IF NOT EXISTS `observacion` TEXT NULL DEFAULT NULL;
+
+-- [2026-10-29] Tabla de historial de lecturas y auditoría QR (HU: Gestión de Registro y Consulta de Auditoría)
+CREATE TABLE IF NOT EXISTS `tn_tarjetavirtual_lecturas_historial` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `documento_consultado` VARCHAR(50) NOT NULL,
+  `documento_consultor` VARCHAR(50) NULL,
+  `origen` ENUM('Dispositivo móvil', 'Navegador web') NOT NULL,
+  `ip` VARCHAR(45) NULL,
+  `fecha` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_lect_consultado` (`documento_consultado`, `fecha`),
+  KEY `idx_lect_consultor` (`documento_consultor`, `fecha`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

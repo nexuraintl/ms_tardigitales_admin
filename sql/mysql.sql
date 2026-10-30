@@ -362,3 +362,19 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- =============================================================================
 -- FIN DEL ESQUEMA OFICIAL
 -- =============================================================================
+
+
+-- =======================================
+-- TABLA: tn_tarjetavirtual_lecturas_historial
+-- =======================================
+CREATE TABLE IF NOT EXISTS 	n_tarjetavirtual_lecturas_historial (
+  id INT(11) NOT NULL AUTO_INCREMENT,
+  documento_consultado VARCHAR(50) NOT NULL,
+  documento_consultor VARCHAR(50) NULL,
+  origen ENUM('Dispositivo móvil', 'Navegador web') NOT NULL,
+  ip VARCHAR(45) NULL,
+  echa DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_lect_consultado (documento_consultado, echa),
+  KEY idx_lect_consultor (documento_consultor, echa)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
