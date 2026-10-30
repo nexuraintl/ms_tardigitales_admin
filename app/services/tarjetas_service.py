@@ -269,7 +269,7 @@ class TarjetasService:
         hash_sha256: str,
         tipo_tarjeta: Optional[str] = None,
         client_id: Optional[int] = None,
-        sanitizar: bool = True,
+        sanitizar: bool = False,
         ip: Optional[str] = None,
         auto_log: bool = False
     ) -> Dict[str, Any]:
