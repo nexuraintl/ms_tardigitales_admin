@@ -112,7 +112,7 @@ class TarjetasService:
         order_dir: str = "DESC"
     ) -> Dict[str, Any]:
         
-        page_size = min(max(page_size, 1), 100)
+        page_size = min(max(page_size, 1), 50000)
 
         try:
             filtros = filtros or {}
@@ -130,7 +130,8 @@ class TarjetasService:
                 filtro_inscripcion=filtros.get("inscripcion"),
                 filtro_correo=filtros.get("correo"),
                 order_by=order_by,
-                order_dir=order_dir
+                order_dir=order_dir,
+                extra_filters=filtros
             )
         except PipelineException:
             raise
@@ -864,7 +865,7 @@ class TarjetasService:
         page_size: int = 10
     ) -> Dict[str, Any]:
         try:
-            page_size = min(max(page_size, 1), 100)
+            page_size = min(max(page_size, 1), 50000)
             page = max(page, 1)
 
             return await self.repository.list_history_branding_credentials(
@@ -1121,7 +1122,7 @@ class TarjetasService:
         cambiar_estado: Optional[str] = None,
     ) -> Dict[str, Any]:
         try:
-            page_size = min(max(page_size, 1), 100)
+            page_size = min(max(page_size, 1), 50000)
             return await self.repository.get_all_auditoria_api(
                 client_id=client_id,
                 page=page,
