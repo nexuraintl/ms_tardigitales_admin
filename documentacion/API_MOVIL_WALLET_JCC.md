@@ -28,7 +28,7 @@
 | **06** | `/apig/tardigitales/admin/tarjetas/branding-institucional/info-published` | `GET` | Query Param (`?client_id=20001`) | Retorna versión publicada del nombre, cargo y firma oficial del Director General. |
 | **07** | `/apig/tardigitales/admin/tarjetas/lecturas/registrar` | `POST` | Body JSON (`"client_id": 20001`) | Registra el evento de auditoría tras escanear una credencial digital/física. |
 | **08** | `/apig/tardigitales/admin/tarjetas/lecturas/historial` | `GET` | Query Param (`?client_id=20001`) | Consulta historial de lecturas (`me_consultaron` o `mis_consultas`). |
-| **09** | `/apig/tardigitales/admin/tarjetas/novedades` | `GET` | No requerido | Consulta el listado de novedades/noticias dinámicas configuradas en el CMS nx9. |
+| **09** | `/apig/tardigitales/admin/tarjetas/novedades` | `GET` | Query Param (`?client_id=20001`) | Consulta el listado de novedades/noticias dinámicas configuradas en el CMS nx9. |
 
 ---
 
@@ -518,9 +518,15 @@ GET /apig/tardigitales/admin/tarjetas/lecturas/historial?documento=987654321&fil
 Permite a la aplicación móvil consultar las novedades institucionales, noticias y comunicados oficiales vigentes configurados desde el bloque dinámico (`bloqueDynamic`) del CMS nx9.
 
 - **Método HTTP:** `GET`
-- **Ruta Gateway:** `/apig/tardigitales/admin/tarjetas/novedades`
-- **Ruta Microservicio:** `/tardigitales/admin/tarjetas/novedades`
+- **Ruta Gateway:** `/apig/tardigitales/admin/tarjetas/novedades?client_id=20001`
+- **Ruta Microservicio:** `/tardigitales/admin/tarjetas/novedades?client_id=20001`
 - **Autenticación:** Pública (no requiere Bearer token para visualización en app móvil).
+
+### Parámetros de Entrada (`Query Params`)
+
+| Parámetro | Tipo | Requerido | Descripción |
+| :--- | :---: | :---: | :--- |
+| `client_id` | `integer` | **Sí** | Identificador de la entidad/tenant (Valor oficial JCC: `20001`). |
 
 ### Respuestas del Servidor
 
