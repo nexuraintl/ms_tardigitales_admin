@@ -28,6 +28,7 @@
 | **06** | `/apig/tardigitales/admin/tarjetas/branding-institucional/info-published` | `GET` | Query Param (`?client_id=20001`) | Retorna versión publicada del nombre, cargo y firma oficial del Director General. |
 | **07** | `/apig/tardigitales/admin/tarjetas/lecturas/registrar` | `POST` | Body JSON (`"client_id": 20001`) | Registra el evento de auditoría tras escanear una credencial digital/física. |
 | **08** | `/apig/tardigitales/admin/tarjetas/lecturas/historial` | `GET` | Query Param (`?client_id=20001`) | Consulta historial de lecturas (`me_consultaron` o `mis_consultas`). |
+| **09** | `/apig/tardigitales/admin/tarjetas/novedades` | `GET` | No requerido | Consulta el listado de novedades/noticias dinámicas configuradas en el CMS nx9. |
 
 ---
 
@@ -508,3 +509,77 @@ GET /apig/tardigitales/admin/tarjetas/lecturas/historial?documento=987654321&fil
 | `data[].origen` | `string` | `"Dispositivo móvil"` o `"Navegador web"`. |
 | `data[].fecha` | `string` | Fecha y hora en formato `YYYY-MM-DD HH:MM:SS` (hora oficial de Colombia UTC-5). |
 | `data[].ip` | `string \| null` | Dirección IP capturada durante la consulta. |
+
+
+---
+
+## 9. `GET /novedades` - Consulta de Novedades y Noticias Dinámicas
+
+Permite a la aplicación móvil consultar las novedades institucionales, noticias y comunicados oficiales vigentes configurados desde el bloque dinámico (`bloqueDynamic`) del CMS nx9.
+
+- **Método HTTP:** `GET`
+- **Ruta Gateway:** `/apig/tardigitales/admin/tarjetas/novedades`
+- **Ruta Microservicio:** `/tardigitales/admin/tarjetas/novedades`
+- **Autenticación:** Pública (no requiere Bearer token para visualización en app móvil).
+
+### Respuestas del Servidor
+
+#### `HTTP 200 OK` (Respuesta Exitosa)
+
+```json
+{
+  "status": "success",
+  "bloque": {
+    "id": 8,
+    "titulo": "Noticias"
+  },
+  "total": 2,
+  "data": [
+    {
+      "id": 1,
+      "titulo": "noticia 1",
+      "icono": "",
+      "imagen": "http://local-jcc.nexura.com.co/info/jcc/media/img263.png",
+      "descripcion": "aaaa",
+      "enlace": "https://nexura.com1"
+    },
+    {
+      "id": 2,
+      "titulo": "noticia 2",
+      "icono": "",
+      "imagen": "http://local-jcc.nexura.com.co/info/jcc/media/img264.png",
+      "descripcion": "",
+      "enlace": "https://nexura.com"
+    }
+  ]
+}
+```
+
+| Campo | Tipo | Descripción |
+| :--- | :--- | :--- |
+| `status` | `string` | `"success"` cuando la consulta es exitosa. |
+| `bloque.id` | `integer` | ID del bloque dinámico configurado en CMS nx9. |
+| `bloque.titulo` | `string` | Nombre descriptivo del bloque (ej. `"Noticias"`). |
+| `total` | `integer` | Cantidad total de elementos de novedad disponibles. |
+| `data[].id` | `integer` | Identificador único secuencial de la novedad. |
+| `data[].titulo` | `string` | Título principal de la noticia/comunicado. |
+| `data[].icono` | `string` | Clase o identificador de ícono gráfico (si aplica). |
+| `data[].imagen` | `string` | URL completa y absoluta del archivo multimedia en el CMS nx9. |
+| `data[].descripcion` | `string` | Resumen o cuerpo breve de la novedad. |
+| `data[].enlace` | `string` | URL externa o enlace web de profundización con protocolo HTTPS. |
+
+#### `HTTP 404 Not Found` (Bloque no configurado o no encontrado)
+
+```json
+{
+  "detail": "Bloque de novedades no encontrado o no configurado en el CMS nx9."
+}
+```
+
+#### `HTTP 422 Unprocessable Entity` (Tipo de bloque incompatible)
+
+```json
+{
+  "detail": "El bloque configurado (ID 81) no es de tipo bloqueDynamic."
+}
+```
