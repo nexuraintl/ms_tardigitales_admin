@@ -20,6 +20,7 @@
 | **Auditoría QR** | `/lecturas/historial` | `GET` | Consulta historial: `filtro=me_consultaron` o `filtro=mis_consultas`. |
 | **Activación** | `/activar-movil` | `POST` | Enrola el dispositivo físico y token push FCM a la tarjeta. |
 | **Verificación** | `/verificar?token=<hash>` | `GET` | Consulta datos de tarjeta por token QR (auto-registra lectura web). |
+| **Novedades** | /novedades | GET | Retorna el listado de novedades y noticias dinámicas configuradas en el CMS nx9. |
 
 ---
 
