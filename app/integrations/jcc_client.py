@@ -220,7 +220,7 @@ class JccClient:
                 "error": f"Error de conexión con la API de la JCC (posible VPN inactiva o servicio inaccesible): {str(e)}"
             }
 
-    async def obtener_novedades(self) -> Dict[str, Any]:
+    async def obtener_novedades(self, client_id: Optional[int] = None) -> Dict[str, Any]:
         """
         Consulta las novedades del bloque dinámico (bloqueDynamic) desde el CMS nx9.
         Endpoint puente: GET /api/TarjetasDigitales/infoBloqueNovedades
