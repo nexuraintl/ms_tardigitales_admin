@@ -595,3 +595,20 @@ async def get_historial_lecturas(
         offset=offset,
         client_id=client_id
     )
+
+
+@router.get("/novedades", status_code=status.HTTP_200_OK, tags=["App Móvil - Novedades"])
+async def get_novedades():
+    """
+    Retorna el listado de novedades (noticias, comunicados) para la aplicación móvil,
+    obtenidas dinámicamente desde el bloque dinámico configurado en el CMS nx9.
+    """
+    result = await service.obtener_novedades()
+    if result.get("status") == "error":
+        status_code = result.get("code", status.HTTP_500_INTERNAL_SERVER_ERROR)
+        raise HTTPException(
+            status_code=status_code,
+            detail=result.get("message", "Error al obtener las novedades desde el CMS nx9.")
+        )
+    return result
+

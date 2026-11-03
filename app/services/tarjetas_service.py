@@ -1312,3 +1312,10 @@ class TarjetasService:
                 cliente_id=client_id,
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    async def obtener_novedades(self) -> Dict[str, Any]:
+        """
+        Obtiene las novedades del bloque dinámico desde el CMS nx9 para la aplicación móvil.
+        """
+        return await self.jcc_client.obtener_novedades()
+
