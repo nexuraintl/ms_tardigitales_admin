@@ -3,7 +3,8 @@
 > **Servicio:** Microservicio Tarjetas Digitales UAE JCC (`ms_tardigitales_admin`).  
 > **Base URL Gateway (Local / Preproducción):** `http://local-jcc.nexura.com.co/apig/tardigitales/admin/tarjetas`  
 > **Base URL Directa Microservicio (Docker):** `http://<host>:8000/tardigitales/admin/tarjetas`  
-> **Headers Globales:**  
+> **Headers Globales (Obligatorios en Gateway):**  
+> - `Authorization: Bearer <access_token>`  
 > - `Content-Type: application/json`  
 > - `Accept: application/json`  
 > - `X-Tenant-Id: jcc` *(Opcional en headers)*  
@@ -520,9 +521,18 @@ Permite a la aplicación móvil consultar las novedades institucionales, noticia
 - **Método HTTP:** `GET`
 - **Ruta Gateway:** `/apig/tardigitales/admin/tarjetas/novedades?client_id=20001`
 - **Ruta Microservicio:** `/tardigitales/admin/tarjetas/novedades?client_id=20001`
-- **Autenticación:** Pública (no requiere Bearer token para visualización en app móvil).
+- **Autenticación:** **Requiere Bearer Token** (`Authorization: Bearer <access_token>`).
 
-### Parámetros de Entrada (`Query Params`)
+### Parámetros de Entrada
+
+#### Cabeceras HTTP (`Headers`)
+
+| Cabecera | Tipo | Requerido | Descripción |
+| :--- | :---: | :---: | :--- |
+| `Authorization` | `string` | **Sí** | Token Bearer de autorización de la sesión activa (`Bearer <token>`). |
+| `Accept` | `string` | **Sí** | `application/json` |
+
+#### Parámetros de Consulta (`Query Params`)
 
 | Parámetro | Tipo | Requerido | Descripción |
 | :--- | :---: | :---: | :--- |
