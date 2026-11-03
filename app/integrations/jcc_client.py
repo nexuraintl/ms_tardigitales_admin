@@ -220,4 +220,57 @@ class JccClient:
                 "error": f"Error de conexión con la API de la JCC (posible VPN inactiva o servicio inaccesible): {str(e)}"
             }
 
-
+    async def obtener_novedades(self) -> Dict[str, Any]:
+        """
+        Consulta las novedades del bloque dinámico (bloqueDynamic) desde el CMS nx9.
+        Endpoint puente: GET /api/TarjetasDigitales/infoBloqueNovedades
+        """
+        url = f"{PROD_BASE_URL}/infoBloqueNovedades"
+        self.last_url = url
+        self.last_metodo = "GET"
+
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "ms_tardigitales_admin/2.0"
+        }
+        if "host.docker.internal" in url or "localhost" in url or "127.0.0.1" in url:
+            headers["Host"] = "local-jcc.nexura.com.co"
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
+                response = await client.get(url, headers=headers)
+
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 404:
+                return {
+                    "status": "error",
+                    "code": 404,
+                    "message": "Bloque de novedades no encontrado o no configurado en el CMS nx9.",
+                    "data": []
+                }
+            elif response.status_code == 422:
+                err_data = response.json() if "application/json" in response.headers.get("content-type", "") else {}
+                msg = err_data.get("message", "El bloque configurado en nx9 no es de tipo bloqueDynamic o su formato es inválido.")
+                return {
+                    "status": "error",
+                    "code": 422,
+                    "message": msg,
+                    "data": []
+                }
+            else:
+                return {
+                    "status": "error",
+                    "code": response.status_code,
+                    "message": f"Error del servidor CMS nx9 al consultar novedades (HTTP {response.status_code}).",
+                    "data": []
+                }
+        except Exception as e:
+            logger.error(f"[JccClient] Error de conexión al consultar novedades en CMS nx9: {e}")
+            return {
+                "status": "error",
+                "code": 503,
+                "message": f"No fue posible conectar con el servidor CMS nx9 para obtener las novedades: {str(e)}",
+                "data": []
+            }
+
