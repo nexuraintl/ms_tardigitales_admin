@@ -32,7 +32,7 @@ class CertificadosRepository:
 
             # Conteo total
             async with conn.cursor() as cur:
-                count_sql = f"SELECT COUNT(*) FROM tn_certificados_expedidos WHERE {where_sql}"
+                count_sql = f"SELECT COUNT(*) FROM tn_tarjetavirtual_certificados_expedidos WHERE {where_sql}"
                 await cur.execute(count_sql, tuple(params))
                 total_row = await cur.fetchone()
                 total = total_row[0] if total_row else 0
@@ -42,7 +42,7 @@ class CertificadosRepository:
                 query_sql = f"""
                     SELECT id, client_id, n_certificado, tipo, documento, nombre_titular, 
                            fecha_generacion, fecha_firma_onac, estado, payload_detalles, origen, created_at
-                    FROM tn_certificados_expedidos
+                    FROM tn_tarjetavirtual_certificados_expedidos
                     WHERE {where_sql}
                     ORDER BY id DESC
                     LIMIT %s OFFSET %s
@@ -81,7 +81,7 @@ class CertificadosRepository:
                 sql = """
                     SELECT id, client_id, n_certificado, tipo, documento, nombre_titular, 
                            fecha_generacion, fecha_firma_onac, estado, payload_detalles, origen, ruta_pdf, hash_sha256
-                    FROM tn_certificados_expedidos
+                    FROM tn_tarjetavirtual_certificados_expedidos
                     WHERE n_certificado = %s
                     LIMIT 1
                 """
@@ -115,7 +115,7 @@ class CertificadosRepository:
         try:
             async with conn.cursor() as cur:
                 sql = """
-                    INSERT INTO tn_certificados_expedidos
+                    INSERT INTO tn_tarjetavirtual_certificados_expedidos
                     (client_id, n_certificado, tipo, documento, nombre_titular, fecha_generacion, fecha_firma_onac, estado, payload_detalles, origen, ruta_pdf, hash_sha256)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
