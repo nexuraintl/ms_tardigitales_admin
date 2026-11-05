@@ -1504,6 +1504,23 @@ class TarjetasRepository:
                     print(f"[TarjetasRepository] Warning: No se pudo crear historial inicial: {e_hist}")
 
                 await conn.commit()
+
+                # Despacho automático de correo de activación si el estado es 'Emitida'
+                estado_creado = data.get("estado") or data.get("estado_tarjeta") or "Emitida"
+                if str(estado_creado).strip().lower() == "emitida":
+                    correo_tit = data.get("correo")
+                    nombre_tit = f"{data.get('nombres') or ''} {data.get('primer_apellido') or ''}".strip() or "Contador Público"
+                    try:
+                        import asyncio
+                        from app.services.notificacion_activacion_service import despachar_correo_activacion
+                        asyncio.create_task(despachar_correo_activacion(
+                            correo=correo_tit,
+                            nombre=nombre_tit,
+                            hash_sha256=hash_calc
+                        ))
+                    except Exception as e_mail:
+                        print(f"[TarjetasRepository] Warning: No se pudo despachar correo de activación para contador {new_id}: {e_mail}")
+
                 return new_id
                 
         except Exception as e:
@@ -1581,6 +1598,23 @@ class TarjetasRepository:
                     print(f"[TarjetasRepository] Warning: No se pudo crear historial inicial: {e_hist}")
 
                 await conn.commit()
+
+                # Despacho automático de correo de activación si el estado es 'Emitida'
+                estado_creado = data.get("estado") or data.get("estado_tarjeta") or "Emitida"
+                if str(estado_creado).strip().lower() == "emitida":
+                    correo_tit = data.get("correo")
+                    nombre_tit = str(data.get("razon_social") or "Sociedad de Contadores").strip()
+                    try:
+                        import asyncio
+                        from app.services.notificacion_activacion_service import despachar_correo_activacion
+                        asyncio.create_task(despachar_correo_activacion(
+                            correo=correo_tit,
+                            nombre=nombre_tit,
+                            hash_sha256=hash_calc
+                        ))
+                    except Exception as e_mail:
+                        print(f"[TarjetasRepository] Warning: No se pudo despachar correo de activación para sociedad {new_id}: {e_mail}")
+
                 return new_id
                 
         except Exception as e:
