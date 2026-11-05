@@ -378,3 +378,33 @@ CREATE TABLE IF NOT EXISTS 	n_tarjetavirtual_lecturas_historial (
   KEY idx_lect_consultado (documento_consultado, echa),
   KEY idx_lect_consultor (documento_consultor, echa)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =======================================
+-- TABLA: tn_tarjetavirtual_certificados_expedidos
+-- =======================================
+CREATE TABLE IF NOT EXISTS 	n_tarjetavirtual_certificados_expedidos (
+  id int(11) NOT NULL AUTO_INCREMENT,
+  client_id int(11) NOT NULL DEFAULT 20001,
+  
+_certificado varchar(100) NOT NULL,
+  	ipo enum('contador','sociedad') NOT NULL,
+  documento varchar(50) NOT NULL,
+  
+ombre_titular varchar(255) NOT NULL,
+  echa_generacion date NOT NULL,
+  echa_firma_onac datetime DEFAULT NULL,
+  estado varchar(50) NOT NULL DEFAULT 'ACTIVO',
+  payload_detalles longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL COMMENT 'Metadata de MyJCC y arreglo de ANTECEDENTES' CHECK (json_valid(payload_detalles)),
+  
+uta_pdf varchar(500) DEFAULT NULL,
+  hash_sha256 varchar(64) DEFAULT NULL,
+  origen varchar(50) NOT NULL DEFAULT 'GENERADO',
+  created_at timestamp NULL DEFAULT current_timestamp(),
+  updated_at timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_n_certificado (
+_certificado),
+  KEY idx_cert_client_tipo (client_id,	ipo),
+  KEY idx_cert_doc (documento),
+  KEY idx_cert_fecha (echa_generacion)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
