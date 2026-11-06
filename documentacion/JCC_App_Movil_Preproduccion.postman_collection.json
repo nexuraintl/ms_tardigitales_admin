@@ -1,0 +1,435 @@
+{
+  "info": {
+    "_postman_id": "c7a8b910-1234-4567-89ab-cdef01234567",
+    "name": "JCC Digital - API Móvil (Preproducción Oficial)",
+    "description": "Colección oficial y validada de endpoints para la App Móvil (Wallet JCC) contra el entorno de Preproducción de la UAE Junta Central de Contadores.\n\n### Instrucciones de uso:\n1. Ejecuta primero la petición **'00 - Obtener Bearer Token Gateway'**. Su script guardará automáticamente el token en la variable `bearer_token` de la colección.\n2. Las demás peticiones ya tienen configurada la autenticación Bearer por herencia.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{bearer_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "00 - Autenticación Gateway",
+      "item": [
+        {
+          "name": "00 - Obtener Bearer Token Gateway",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data && jsonData.data.token) {",
+                  "    pm.collectionVariables.set('bearer_token', jsonData.data.token);",
+                  "    console.log('✅ Bearer Token actualizado automáticamente en la colección.');",
+                  "} else {",
+                  "    console.error('❌ No se encontró token en la respuesta:', jsonData);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/Usuarios/getTokenForGatewayUrl",
+              "host": ["{{base_url}}"],
+              "path": ["api", "Usuarios", "getTokenForGatewayUrl"]
+            },
+            "description": "Obtiene el JWT necesario para autorizar las llamadas que transitan por el API Gateway de Google Cloud."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01 - Verificación y Consulta",
+      "item": [
+        {
+          "name": "01 - Verificar Credencial por Hash (Path)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/verificar/{{hash_tarjeta}}?client_id={{client_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["apig", "tardigitales", "admin", "tarjetas", "verificar", "{{hash_tarjeta}}"],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}",
+                  "description": "ID del tenant UAE JCC (20001)"
+                }
+              ]
+            },
+            "description": "Consulta y valida los datos de la tarjeta a partir del hash SHA-256 extraído del código QR."
+          },
+          "response": []
+        },
+        {
+          "name": "01b - Verificar Credencial por Query Param",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/verificar?token={{hash_tarjeta}}&client_id={{client_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["apig", "tardigitales", "admin", "tarjetas", "verificar"],
+              "query": [
+                {
+                  "key": "token",
+                  "value": "{{hash_tarjeta}}"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                }
+              ]
+            },
+            "description": "Variante alternativa enviando el hash por query param 'token'."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 - OTP (Activación Titular)",
+      "item": [
+        {
+          "name": "02 - Solicitar Código OTP al Correo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hash\": \"{{hash_tarjeta}}\",\n  \"expediente\": \"{{expediente}}\",\n  \"client_id\": {{client_id}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/otp/solicitar",
+              "host": ["{{base_url}}"],
+              "path": ["apig", "tardigitales", "admin", "tarjetas", "otp", "solicitar"]
+            },
+            "description": "Verifica que el expediente digitado por el usuario coincida con el hash de la tarjeta y despacha el OTP de 6 dígitos al correo oficial del titular."
+          },
+          "response": []
+        },
+        {
+          "name": "03 - Validar Código OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hash\": \"{{hash_tarjeta}}\",\n  \"token\": \"123456\",\n  \"expediente\": \"{{expediente}}\",\n  \"client_id\": {{client_id}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/otp/validar",
+              "host": ["{{base_url}}"],
+              "path": ["apig", "tardigitales", "admin", "tarjetas", "otp", "validar"]
+            },
+            "description": "Valida si el código OTP de 6 dígitos recibido por correo es correcto y sigue vigente (5 minutos de validez)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 - Activación en Wallet",
+      "item": [
+        {
+          "name": "04 - Activar Tarjeta Móvil (Enrolamiento)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{hash_tarjeta}}\",\n  \"client_id\": {{client_id}},\n  \"device_id\": \"9a1b2c3d-4e5f-6789-abcd-ef0123456789\",\n  \"fcm_token\": \"c_qXy...ejemplo_token_firebase\",\n  \"device_os\": \"android\",\n  \"device_modelo\": \"Samsung Galaxy S23\",\n  \"app_version\": \"1.0.0\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/activar-movil",
+              "host": ["{{base_url}}"],
+              "path": ["apig", "tardigitales", "admin", "tarjetas", "activar-movil"]
+            },
+            "description": "Pasa la tarjeta a estado Activa, registra el dispositivo para notificaciones push y entrega los datos de la credencial y el branding para renderizar en el Wallet."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 - Branding y Diseño",
+      "item": [
+        {
+          "name": "05 - Branding Credenciales Publicado (Contadores: 1, Sociedades: 2)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/branding-credentials/info-published/1?client_id={{client_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["apig", "tardigitales", "admin", "tarjetas", "branding-credentials", "info-published", "1"],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                }
+              ]
+            },
+            "description": "Entrega la configuración de colores, gradientes, logo SVG y patrón en Base64 actualmente publicada para contadores (id=1) o sociedades (id=2)."
+          },
+          "response": []
+        },
+        {
+          "name": "06 - Branding Institucional Publicado",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/branding-institucional/info-published?client_id={{client_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["apig", "tardigitales", "admin", "tarjetas", "branding-institucional", "info-published"],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                }
+              ]
+            },
+            "description": "Entrega la firma oficial del Director General, su cargo y su nombre vigentes para renderizar la credencial."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05 - Lecturas y Auditoría",
+      "item": [
+        {
+          "name": "07 - Registrar Lectura QR",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documento_consultado\": \"{{documento_titular}}\",\n  \"documento_consultor\": null,\n  \"tipo_qr\": \"dinamico\",\n  \"origen\": \"Dispositivo móvil\",\n  \"client_id\": {{client_id}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/lecturas/registrar",
+              "host": ["{{base_url}}"],
+              "path": ["apig", "tardigitales", "admin", "tarjetas", "lecturas", "registrar"]
+            },
+            "description": "Guarda la traza de auditoría cada vez que la app móvil escanea un código QR."
+          },
+          "response": []
+        },
+        {
+          "name": "08 - Historial de Lecturas del Titular",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/lecturas/historial?documento={{documento_titular}}&tipo_filtro=me_consultaron&client_id={{client_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["apig", "tardigitales", "admin", "tarjetas", "lecturas", "historial"],
+              "query": [
+                {
+                  "key": "documento",
+                  "value": "{{documento_titular}}",
+                  "description": "Documento del titular"
+                },
+                {
+                  "key": "tipo_filtro",
+                  "value": "me_consultaron",
+                  "description": "me_consultaron o mis_consultas"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                }
+              ]
+            },
+            "description": "Retorna el historial de quién ha escaneado la credencial del titular."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "06 - Novedades",
+      "item": [
+        {
+          "name": "09 - Novedades y Noticias Dinámicas (Gateway)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/novedades?client_id={{client_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["apig", "tardigitales", "admin", "tarjetas", "novedades"],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}",
+                  "description": "ID del tenant (opcional, ej: 20001)"
+                }
+              ]
+            },
+            "description": "Retorna las noticias y comunicados oficiales vigentes del CMS a través del Google Cloud API Gateway. Requiere Bearer Token."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "07 - Exportar PDF",
+      "item": [
+        {
+          "name": "10 - Exportar PDF Credencial por Hash",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/pdf"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/verificar/{{hash_tarjeta}}/pdf?client_id={{client_id}}&download=true",
+              "host": ["{{base_url}}"],
+              "path": ["apig", "tardigitales", "admin", "tarjetas", "verificar", "{{hash_tarjeta}}", "pdf"],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                },
+                {
+                  "key": "download",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Genera y descarga el archivo PDF oficial de la tarjeta digital con su código QR para compartir."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://preproduccion9-jcc.nexura.com.co",
+      "type": "string"
+    },
+    {
+      "key": "bearer_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "client_id",
+      "value": "20001",
+      "type": "string"
+    },
+    {
+      "key": "hash_tarjeta",
+      "value": "fb98bcc7ef3167edae16559c4d04b1ffe663735108db2bad5ff6c741b1ef6898",
+      "type": "string"
+    },
+    {
+      "key": "expediente",
+      "value": "375883",
+      "type": "string"
+    },
+    {
+      "key": "documento_titular",
+      "value": "1152456369",
+      "type": "string"
+    }
+  ]
+}
+
