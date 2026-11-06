@@ -36,8 +36,6 @@ USE_PHP_VPN_BRIDGE: bool = True
 PREPROD_PHP_BRIDGE_URL: str = os.getenv(
     "PREPROD_PHP_BRIDGE_URL",
     "https://preproduccion9-jcc.nexura.com.co/"
-    if os.getenv("APP_ENV", "development").lower() in ("production", "preproduction", "preprod")
-    else "http://host.docker.internal:9090"
 ).rstrip("/")
 OFFICIAL_JCC_API_URL: str = "https://apitarjetas.jcc.gov.co"
 
