@@ -190,16 +190,20 @@ class ActivacionMovilRequestSchema(BaseModel):
 class RegistroLecturaRequestSchema(BaseModel):
     documento_consultado: str = Field(..., description="Documento o NIT del titular consultado (o token/hash)")
     documento_consultor: Optional[str] = Field(None, description="Documento del usuario que realiza la consulta (App Móvil)")
+    id_lectura: Optional[str] = Field(None, description="Identificador único (UUID v4) generado por la App Móvil para garantizar idempotencia en sincronizaciones offline")
+    fecha_lectura: Optional[str] = Field(None, description="Fecha y hora real en que ocurrió la lectura offline (YYYY-MM-DD HH:MM:SS o ISO 8601)")
     tipo_qr: Optional[str] = Field("dinamico", description="Tipo de QR escaneado: 'dinamico' (móvil) o 'estatico' (web)")
     origen: Optional[str] = Field(None, description="Origen explícito ('Dispositivo móvil' o 'Navegador web')")
     client_id: Optional[int] = Field(None, description="ID de la entidad cliente (opcional, default tenant)")
 
 class LecturaHistorialItemSchema(BaseModel):
     id: int
+    id_lectura: Optional[str] = None
     documento_consultado: str
     documento_consultor: Optional[str] = None
     origen: str
     fecha: str
+    fecha_sincronizacion: Optional[str] = None
     ip: Optional[str] = None
 
 class ConsultaHistorialLecturasResponseSchema(BaseModel):

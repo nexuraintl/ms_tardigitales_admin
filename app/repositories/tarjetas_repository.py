@@ -2,6 +2,8 @@ import aiomysql
 import json
 import math
 import hashlib
+import secrets
+from app.constants import CARD_SECURITY_SALT
 from datetime import datetime, timezone, timedelta
 
 COLOMBIA_TZ = timezone(timedelta(hours=-5))
@@ -290,6 +292,7 @@ class TarjetasRepository:
                             ttc.seccional,
                             ttc.foto,
                             ttc.hash_sha256,
+                            ttc.token_verificacion,
                             (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = ttc.id AND teh.estado = 'Activa') AS fecha_activacion
                     """
                 else:
@@ -314,6 +317,7 @@ class TarjetasRepository:
                             tts.representante_legal,
                             tts.foto,
                             tts.hash_sha256,
+                            tts.token_verificacion,
                             (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = tts.id AND teh.estado = 'Activa') AS fecha_activacion
                     """
 
@@ -369,6 +373,7 @@ class TarjetasRepository:
             ttc.seccional,
             ttc.foto,
             ttc.hash_sha256,
+            ttc.token_verificacion,
             (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = ttc.id AND teh.estado = 'Activa') AS fecha_activacion
         FROM tn_tarjetavirtual_contadores ttc
     """
@@ -394,6 +399,7 @@ class TarjetasRepository:
             tts.representante_legal,
             tts.foto,
             tts.hash_sha256,
+            tts.token_verificacion,
             (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = tts.id AND teh.estado = 'Activa') AS fecha_activacion
         FROM tn_tarjetavirtual_sociedades tts
     """
@@ -454,10 +460,34 @@ class TarjetasRepository:
             conn.close()
 
     async def get_by_hash(self, hash_sha256: str, tipo_tarjeta: Optional[str] = None, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        """Busca estrictamente por hash_sha256 canónico (usado para activación privada y OTP)."""
         conn = await get_client_connection(client_id)
         try:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
                 return await self._query_single_tarjeta(cursor, "hash_sha256", hash_sha256, tipo_tarjeta)
+        finally:
+            conn.close()
+
+    async def get_by_verification_token(
+        self,
+        token: str,
+        tipo_tarjeta: Optional[str] = None,
+        client_id: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Busca una tarjeta para la vista de verificación pública (/admin/tardigitales/verificar).
+        Prioriza la búsqueda por 'token_verificacion' y mantiene fallback a 'hash_sha256'
+        para compatibilidad con tarjetas generadas antes del desacoplamiento de seguridad.
+        """
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                # 1. Búsqueda por token_verificacion (QR público)
+                tarjeta = await self._query_single_tarjeta(cursor, "token_verificacion", token, tipo_tarjeta)
+                if tarjeta:
+                    return tarjeta
+                # 2. Fallback a hash_sha256 para tarjetas legacy
+                return await self._query_single_tarjeta(cursor, "hash_sha256", token, tipo_tarjeta)
         finally:
             conn.close()
 
@@ -1455,17 +1485,22 @@ class TarjetasRepository:
                         tipo_asociado,
                         estado,
                         foto,
-                        hash_sha256
+                        hash_sha256,
+                        token_verificacion
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s, %s, %s, NOW(), %s, %s,
-                        %s, %s
+                        %s, %s, %s
                     )
                 """
                 
-                # Calcular hash SHA-256 canónico para la credencial
-                raw_hash = f"{data.get('no_tarjeta')}|{data.get('no_documento')}|{data.get('no_expd')}|{data.get('resolucion') or ''}|{data.get('fecha_resolucion') or ''}"
-                hash_calc = hashlib.sha256(raw_hash.encode('utf-8')).hexdigest()
+                # 1. Token de verificación público (exclusivo para QR del PDF / vista /verificar)
+                token_verif = secrets.token_hex(32)
+
+                # 2. Hash de activación privado con CSPRNG y sal del servidor (para correo y app móvil)
+                entropia_privada = secrets.token_hex(32)
+                raw_activacion = f"{data.get('no_tarjeta')}|{data.get('no_documento')}|{data.get('no_expd')}|{CARD_SECURITY_SALT}|{entropia_privada}"
+                hash_calc = hashlib.sha256(raw_activacion.encode('utf-8')).hexdigest()
 
                 values = (
                     data.get("no_tarjeta"),
@@ -1488,7 +1523,8 @@ class TarjetasRepository:
                     data.get("tipo_asociado") or data.get("tipo_asociado_id") or "Contador Público",
                     data.get("estado") or data.get("estado_tarjeta") or "Emitida",
                     data.get("foto"),
-                    hash_calc
+                    hash_calc,
+                    token_verif
                 )
                 
                 await cursor.execute(query, values)
@@ -1553,16 +1589,21 @@ class TarjetasRepository:
                         estado,
                         foto,
                         representante_legal,
-                        hash_sha256
+                        hash_sha256,
+                        token_verificacion
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, NOW(), %s, %s, %s, %s, %s
+                        %s, %s, %s, NOW(), %s, %s, %s, %s, %s, %s
                     )
                 """
                 
-                # Calcular hash SHA-256 canónico para sociedades
-                raw_hash = f"{data.get('nit')}|{data.get('no_expd')}|{data.get('resolucion') or ''}|{data.get('fecha_resolucion') or ''}"
-                hash_calc = hashlib.sha256(raw_hash.encode('utf-8')).hexdigest()
+                # 1. Token de verificación público (exclusivo para QR del PDF / vista /verificar)
+                token_verif = secrets.token_hex(32)
+
+                # 2. Hash de activación privado con CSPRNG y sal del servidor (para correo y app móvil)
+                entropia_privada = secrets.token_hex(32)
+                raw_activacion = f"{data.get('nit')}|{data.get('no_expd')}|{CARD_SECURITY_SALT}|{entropia_privada}"
+                hash_calc = hashlib.sha256(raw_activacion.encode('utf-8')).hexdigest()
 
                 values = (
                     data.get("no_expd") or 0,
@@ -1582,7 +1623,8 @@ class TarjetasRepository:
                     data.get("estado") or data.get("estado_tarjeta") or "Emitida",
                     data.get("foto"),
                     data.get("representante_legal") or data.get("representante"),
-                    hash_calc
+                    hash_calc,
+                    token_verif
                 )
                 
                 await cursor.execute(query, values)
@@ -2829,49 +2871,102 @@ class TarjetasRepository:
         documento_consultor: Optional[str] = None,
         origen: str = "Dispositivo móvil",
         ip: Optional[str] = None,
-        client_id: Optional[int] = None
+        client_id: Optional[int] = None,
+        id_lectura: Optional[str] = None,
+        fecha_lectura: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Registra un evento de lectura QR en el historial (HU: Gestión de Registro y Consulta de Auditoría)."""
+        """
+        Registra un evento de lectura QR en el historial (HU: Gestión de Registro y Consulta de Auditoría).
+        Soporta sincronización asincrónica offline e idempotencia mediante id_lectura (UUID).
+        """
         conn = await get_client_connection(client_id)
         try:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
+                # 1. Validación de idempotencia si viene id_lectura
+                clean_id_lectura = str(id_lectura).strip() if id_lectura else None
+                if clean_id_lectura:
+                    await cursor.execute(
+                        """
+                        SELECT id, id_lectura, documento_consultado, documento_consultor, origen, ip,
+                               DATE_FORMAT(fecha, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha,
+                               DATE_FORMAT(fecha_sincronizacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_sincronizacion
+                        FROM tn_tarjetavirtual_lecturas_historial
+                        WHERE id_lectura = %s
+                        LIMIT 1
+                        """,
+                        (clean_id_lectura,)
+                    )
+                    existente = await cursor.fetchone()
+                    if existente:
+                        return {
+                            "id": existente["id"],
+                            "id_lectura": existente["id_lectura"],
+                            "documento_consultado": existente["documento_consultado"],
+                            "documento_consultor": existente.get("documento_consultor"),
+                            "origen": existente["origen"],
+                            "ip": existente.get("ip"),
+                            "fecha": existente["fecha"],
+                            "fecha_sincronizacion": existente.get("fecha_sincronizacion"),
+                            "ya_registrado": True
+                        }
+
                 doc_real = str(documento_consultado).strip()
                 # Si el documento parece un hash SHA-256 (>= 32 chars), resolver la cédula o NIT real
                 if len(doc_real) >= 32 and not doc_real.isdigit():
                     await cursor.execute(
                         """
-                        SELECT no_documento AS doc FROM tn_tarjetavirtual_contadores WHERE hash_sha256 = %s
+                        SELECT no_documento AS doc FROM tn_tarjetavirtual_contadores WHERE hash_sha256 = %s OR token_verificacion = %s
                         UNION
-                        SELECT nit AS doc FROM tn_tarjetavirtual_sociedades WHERE hash_sha256 = %s
+                        SELECT nit AS doc FROM tn_tarjetavirtual_sociedades WHERE hash_sha256 = %s OR token_verificacion = %s
                         LIMIT 1
                         """,
-                        (doc_real, doc_real)
+                        (doc_real, doc_real, doc_real, doc_real)
                     )
                     found = await cursor.fetchone()
                     if found and found.get("doc"):
                         doc_real = str(found["doc"])
 
-                fecha_colombia = datetime.now(COLOMBIA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+                # 2. Normalización de fecha real de escaneo (offline) vs sincronización (online)
+                fecha_evento = None
+                if fecha_lectura and str(fecha_lectura).strip():
+                    raw_f = str(fecha_lectura).strip()
+                    import re
+                    m = re.match(r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})", raw_f)
+                    if m:
+                        fecha_evento = f"{m.group(1)} {m.group(2)}"
+
+                if not fecha_evento:
+                    fecha_evento = datetime.now(COLOMBIA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+                fecha_sinc = datetime.now(COLOMBIA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+                # 3. Inserción atómica con id_lectura y ambas marcas temporales
                 await cursor.execute(
                     """
                     INSERT INTO tn_tarjetavirtual_lecturas_historial (
+                        id_lectura,
                         documento_consultado,
                         documento_consultor,
                         origen,
                         ip,
-                        fecha
-                    ) VALUES (%s, %s, %s, %s, %s)
+                        fecha,
+                        fecha_sincronizacion
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
-                    (doc_real, documento_consultor, origen, ip, fecha_colombia)
+                    (clean_id_lectura, doc_real, documento_consultor, origen, ip, fecha_evento, fecha_sinc)
                 )
                 await conn.commit()
                 nuevo_id = cursor.lastrowid
                 return {
                     "id": nuevo_id,
+                    "id_lectura": clean_id_lectura,
                     "documento_consultado": doc_real,
                     "documento_consultor": documento_consultor,
                     "origen": origen,
-                    "ip": ip
+                    "ip": ip,
+                    "fecha": fecha_evento,
+                    "fecha_sincronizacion": fecha_sinc,
+                    "ya_registrado": False
                 }
         finally:
             conn.close()
@@ -2921,10 +3016,12 @@ class TarjetasRepository:
                 for f in filas:
                     items.append({
                         "id": f["id"],
+                        "id_lectura": f.get("id_lectura"),
                         "documento_consultado": f["documento_consultado"],
                         "documento_consultor": f.get("documento_consultor"),
                         "origen": f["origen"],
                         "fecha": f["fecha"],
+                        "fecha_sincronizacion": f.get("fecha_sincronizacion"),
                         "ip": f.get("ip")
                     })
 

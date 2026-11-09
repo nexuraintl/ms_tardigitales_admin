@@ -51,6 +51,13 @@ OTP_BLOCKING_ATTEMPTS: int = int(os.getenv("OTP_BLOCKING_ATTEMPTS", "10"))
 OTP_DEFAULT_CELLPHONE: str = os.getenv("OTP_DEFAULT_CELLPHONE", "3000000000")
 OTP_SIMULATION_MODE: bool = os.getenv("OTP_SIMULATION_MODE", "false").lower() in ("true", "1", "yes")
 
+# =============================================================================
+# SEGURIDAD CRIPTOGRÁFICA Y GENERACIÓN DE HASHES (UAE JCC)
+# Semilla estática fija (no depende de .env ni se pierde en CI/CD)
+# =============================================================================
+CARD_SECURITY_SALT: str = "JCC_TARDIGITALES_SECURE_SALT_KEY_2026_NEXURA"
+
+
 
 
 
