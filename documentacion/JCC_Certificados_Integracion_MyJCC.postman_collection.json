@@ -1,0 +1,196 @@
+{
+	"info": {
+		"_postman_id": "c3a9f012-78d1-49b0-819a-certificados-myjcc",
+		"name": "JCC Certificados - Integración MyJCC",
+		"description": "Colección oficial para la integración entre MyJCC y Nexura Platform para la emisión y redescarga del Certificado de Vigencia y Antecedentes Disciplinarios.\n\nFlujo:\n1. Autenticación con Core Auth Token (/apig/core/auth/token).\n2. Invocación del servicio con Bearer Token (/apig/tardigitales/admin/certificados/procesar).\n3. Retorno del archivo binario PDF firmado.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{access_token}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "https://preproduccion9-jcc.nexura.com.co",
+			"type": "string"
+		},
+		{
+			"key": "client_id",
+			"value": "20060",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "01 - Obtener Token de Acceso (Core Auth)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = pm.response.json();",
+							"if (jsonData.access_token) {",
+							"    pm.collectionVariables.set('access_token', jsonData.access_token);",
+							"    console.log('✅ Access Token obtenido y asignado a {{access_token}}:', jsonData.access_token.substring(0, 25) + '...');",
+							"} else {",
+							"    console.error('❌ No se encontró access_token en la respuesta:', jsonData);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Accept",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"user\": \"cdiaz@skylabs.com.co\",\n  \"password\": \"Dakota13.\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/apig/core/auth/token",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"apig",
+						"core",
+						"auth",
+						"token"
+					]
+				},
+				"description": "Autenticación central contra el Core API Gateway. El access_token retornado se almacena automáticamente en la variable {{access_token}} de la colección para autorizar el resto de llamadas."
+			},
+			"response": []
+		},
+		{
+			"name": "02 - Procesar Certificado Contador (Primera Emisión)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Accept",
+						"value": "application/pdf"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"Nuevo\": true,\n  \"fechaGeneracion\": \"2026-11-07\",\n  \"tipo\": \"contador\",\n  \"documento\": \"1000000000\",\n  \"N_CERTIFICADO\": \"CERT-CON-2026-001\",\n  \"historia\": \"5\",\n  \"dirigido\": \"A QUIEN INTERESE\",\n  \"Detalles\": {\n    \"CON_CODIGO\": 100001,\n    \"CON_NOMBRES\": \"CARLOS ANDRES\",\n    \"CON_APELLIDO1\": \"PEREZ\",\n    \"CON_APELLIDO2\": \"GOMEZ\",\n    \"TDOC_CODIGO\": \"CC\",\n    \"CON_NRO_DOCUMENTO\": 1000000000,\n    \"MUNICIPIO_DOCUMENTO\": \"BOGOTA D.C.\",\n    \"DEPARTAMENTO_DOCUMENTO\": \"BOGOTA D.C.\",\n    \"CON_NRO_TARJETA\": 123456,\n    \"CON_TIPO_TARJETA\": \"T\",\n    \"ESTADO\": \"ACTIVO\",\n    \"CON_FECHA_ACTUALIZACION\": \"2026-10-15 08:30:00\",\n    \"ANTECEDENTES\": [\n      {\n        \"SAN_TIPO\": \"S\",\n        \"SAN_MESES\": 12,\n        \"SAN_RESOLUCION\": \"T-000-0001\",\n        \"SAN_FECHA_RESOLUCION\": \"2025-01-15 00:00:00\",\n        \"SAN_FECHA_EJECUTORIA\": \"2025-02-04 00:00:00\",\n        \"SAN_FECHA_FIN\": \"2026-02-04 00:00:00\"\n      }\n    ]\n  }\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/apig/tardigitales/admin/certificados/procesar",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"apig",
+						"tardigitales",
+						"admin",
+						"certificados",
+						"procesar"
+					]
+				},
+				"description": "Primera emisión de certificado de vigencia y antecedentes para contador público (Nuevo: true). Retorna el archivo binario PDF."
+			},
+			"response": []
+		},
+		{
+			"name": "03 - Procesar Certificado Sociedad (Primera Emisión)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Accept",
+						"value": "application/pdf"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"Nuevo\": true,\n  \"fechaGeneracion\": \"2026-11-07\",\n  \"tipo\": \"sociedad\",\n  \"documento\": \"9005408655\",\n  \"N_CERTIFICADO\": \"CERT-SOC-2026-002\",\n  \"historia\": \"5\",\n  \"dirigido\": \"SUPERINTENDENCIA DE SOCIEDADES\",\n  \"Detalles\": {\n    \"SOC_CODIGO\": 50012,\n    \"SOC_RAZON_SOCIAL\": \"AUDITORES Y ASOCIADOS DEL PACIFICO S.A.S.\",\n    \"TDOC_CODIGO\": \"NIT\",\n    \"SOC_NUMERO_DOCUMENTO\": \"900540865-5\",\n    \"SOC_REPRESENTANTE_LEGAL\": \"MARIA FERNANDA BOTERO\",\n    \"MUNICIPIO\": \"CALI\",\n    \"DEPARTAMENTO\": \"VALLE DEL CAUCA\",\n    \"ESTADO\": \"ACTIVO\",\n    \"SOC_FECHA_ACTUALIZACION\": \"2026-11-01 14:20:00\",\n    \"ANTECEDENTES\": []\n  }\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/apig/tardigitales/admin/certificados/procesar",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"apig",
+						"tardigitales",
+						"admin",
+						"certificados",
+						"procesar"
+					]
+				},
+				"description": "Primera emisión de certificado de vigencia y antecedentes para firma o sociedad de contadores (Nuevo: true)."
+			},
+			"response": []
+		},
+		{
+			"name": "04 - Redescargar Certificado Existente (Nuevo: false)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Accept",
+						"value": "application/pdf"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"Nuevo\": false,\n  \"fechaGeneracion\": \"2026-11-07\",\n  \"tipo\": \"contador\",\n  \"documento\": \"1000000000\",\n  \"N_CERTIFICADO\": \"CERT-CON-2026-001\",\n  \"historia\": \"5\",\n  \"dirigido\": \"A QUIEN INTERESE\",\n  \"Detalles\": {\n    \"CON_CODIGO\": 100001,\n    \"CON_NOMBRES\": \"CARLOS ANDRES\",\n    \"CON_APELLIDO1\": \"PEREZ\",\n    \"CON_APELLIDO2\": \"GOMEZ\",\n    \"TDOC_CODIGO\": \"CC\",\n    \"CON_NRO_DOCUMENTO\": 1000000000,\n    \"CON_NRO_TARJETA\": 123456,\n    \"CON_TIPO_TARJETA\": \"T\",\n    \"ESTADO\": \"ACTIVO\",\n    \"ANTECEDENTES\": []\n  }\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/apig/tardigitales/admin/certificados/procesar",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"apig",
+						"tardigitales",
+						"admin",
+						"certificados",
+						"procesar"
+					]
+				},
+				"description": "Redescarga de un certificado previamente generado (Nuevo: false). Busca en la BD por N_CERTIFICADO y retorna el PDF correspondiente."
+			},
+			"response": []
+		}
+	]
+}
