@@ -438,9 +438,10 @@ class PdfGeneratorService:
             )
             svg = re.sub(r'<path[^>]*fill="url\(#pattern2_270_2849\)"[^>]*/>', '', svg)
 
-        # 9. Generación e inyección del código QR oficial
-        hash_doc = (
-            tarjeta.get("hash_sha256")
+        # 9. Generación e inyección del código QR oficial (Token público de verificación desacoplado)
+        token_verif = (
+            tarjeta.get("token_verificacion")
+            or tarjeta.get("hash_sha256")
             or tarjeta.get("hash_documento")
             or tarjeta.get("hash_registro")
             or ""
@@ -448,7 +449,7 @@ class PdfGeneratorService:
         raw_base = str(tarjeta.get("base_url") or "https://preproduccion9.jcc.nexura.com.co").strip()
         m_origin = re.match(r"^(https?://[^/]+)", raw_base)
         base_url = m_origin.group(1) if m_origin else "https://preproduccion9.jcc.nexura.com.co"
-        qr_url = f"{base_url}/admin/tardigitales/verificar?token={hash_doc}"
+        qr_url = f"{base_url}/admin/tardigitales/verificar?token={token_verif}"
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_M,

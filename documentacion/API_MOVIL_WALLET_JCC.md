@@ -371,9 +371,9 @@ Retorna de manera directa el nombre, cargo y firma facsímil del Director Genera
 
 ---
 
-## 7. `POST /lecturas/registrar` - Ingesta de Lectura de Código QR
+## 7. `POST /lecturas/registrar` - Ingesta de Lectura de Código QR (Soporte Offline e Idempotencia)
 
-Registra el evento de auditoría cuando una credencial profesional es escaneada o consultada.
+Registra el evento de auditoría cuando una credencial profesional es escaneada o consultada. Cuenta con soporte completo para sincronizaciones asincrónicas desde la App Móvil (lecturas offline) y garantías de idempotencia para evitar registros duplicados en reintentos de red.
 
 - **Método HTTP:** `POST`
 - **Ruta Gateway:** `/apig/tardigitales/admin/tarjetas/lecturas/registrar`
@@ -386,6 +386,8 @@ Registra el evento de auditoría cuando una credencial profesional es escaneada 
 {
   "documento_consultado": "1002345678",
   "documento_consultor": "987654321",
+  "id_lectura": "c4b12345-6789-4abc-def0-123456789abc",
+  "fecha_lectura": "2026-11-08 19:45:10",
   "tipo_qr": "dinamico",
   "client_id": 20001
 }
@@ -393,25 +395,51 @@ Registra el evento de auditoría cuando una credencial profesional es escaneada 
 
 | Campo | Tipo | Requerido | Descripción |
 | :--- | :--- | :---: | :--- |
-| `documento_consultado` | `string` | **Sí** | Número de documento del titular consultado, o el hash SHA-256 extraído del QR (el backend resuelve automáticamente el documento del titular). |
+| `documento_consultado` | `string` | **Sí** | Número de documento del titular consultado, o el hash / token de verificación extraído del QR (el backend resuelve automáticamente el documento del titular). |
 | `documento_consultor` | `string` | No | Número de documento del usuario autenticado en la App Móvil que ejecuta el escaneo. En lecturas anónimas se omite o es `null`. |
+| `id_lectura` | `string` | **Recomendado en Móvil** | Identificador UUID v4 único generado por la App Móvil en el momento exacto del escaneo local. Garantiza que si el móvil reintenta sincronizar por inestabilidad de red, el backend no genere duplicados. |
+| `fecha_lectura` | `string` | **Recomendado en Móvil** | Fecha y hora real en que ocurrió el escaneo offline en el móvil (`YYYY-MM-DD HH:MM:SS` o ISO-8601 `2026-11-08T19:45:10Z`). Si se omite, el backend asume la hora actual de Colombia. |
 | `tipo_qr` | `string` | No | `"dinamico"` (default, asigna automáticamente `origen = "Dispositivo móvil"`) o `"estatico"` (asigna `origen = "Navegador web"`). |
 | `origen` | `string` | No | Permite especificar el origen de forma explícita: `"Dispositivo móvil"` o `"Navegador web"`. |
 | `client_id` | `integer` | No | ID de la entidad cliente/tenant (UAE JCC: `20001`). Puede enviarse en Body o Query. |
 
 ### Respuestas del Servidor
 
-#### `HTTP 201 Created` (Lectura Registrada)
+#### `HTTP 201 Created` (Nueva Lectura Registrada)
 ```json
 {
   "success": true,
   "mensaje": "Lectura registrada exitosamente.",
   "data": {
     "id": 142,
+    "id_lectura": "c4b12345-6789-4abc-def0-123456789abc",
     "documento_consultado": "1002345678",
     "documento_consultor": "987654321",
     "origen": "Dispositivo móvil",
-    "ip": "186.84.20.15"
+    "ip": "186.84.20.15",
+    "fecha": "2026-11-08 19:45:10",
+    "fecha_sincronizacion": "2026-11-08 23:50:00",
+    "ya_registrado": false
+  }
+}
+```
+
+#### `HTTP 200 OK` (Lectura Idempotente / Ya sincronizada)
+Si la App Móvil reenvía un `id_lectura` previamente registrado (por reintentos de red), el backend no duplica el registro y retorna el evento existente con `ya_registrado: true` para que la app móvil limpie su cola local:
+```json
+{
+  "success": true,
+  "mensaje": "Lectura previamente sincronizada (idempotencia confirmada).",
+  "data": {
+    "id": 142,
+    "id_lectura": "c4b12345-6789-4abc-def0-123456789abc",
+    "documento_consultado": "1002345678",
+    "documento_consultor": "987654321",
+    "origen": "Dispositivo móvil",
+    "ip": "186.84.20.15",
+    "fecha": "2026-11-08 19:45:10",
+    "fecha_sincronizacion": "2026-11-08 23:50:00",
+    "ya_registrado": true
   }
 }
 ```
