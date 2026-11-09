@@ -274,7 +274,7 @@ class TarjetasService:
         auto_log: bool = False
     ) -> Dict[str, Any]:
         try:
-            tarjeta = await self.repository.get_by_hash(hash_sha256, tipo_tarjeta, client_id)
+            tarjeta = await self.repository.get_by_verification_token(hash_sha256, tipo_tarjeta, client_id)
             if not tarjeta:
                 raise PipelineException(
                     etapa="TABLA_PRINCIPAL",
@@ -1148,9 +1148,18 @@ class TarjetasService:
             )
     async def activar_tarjeta_movil(self, payload: ActivacionMovilRequestSchema) -> Dict[str, Any]:
         client_id = payload.client_id or 20001
-        # 1. Obtener tarjeta por hash
+        # 1. Obtener tarjeta por hash privado de activación
         tarjeta = await self.repository.get_by_hash(payload.token, client_id=client_id)
         if not tarjeta:
+            # Validar si el usuario intentó activar usando el token público del PDF
+            tarjeta_pub = await self.repository.get_by_verification_token(payload.token, client_id=client_id)
+            if tarjeta_pub:
+                raise PipelineException(
+                    etapa="ACTIVACION_MOVIL",
+                    mensaje="El código suministrado corresponde al token público de verificación del PDF y no puede utilizarse para activar la credencial móvil.",
+                    cliente_id=client_id,
+                    status_code=status.HTTP_403_FORBIDDEN
+                )
             raise PipelineException(
                 etapa="ACTIVACION_MOVIL",
                 mensaje="No se encontró ninguna credencial registrada con el código o token suministrado.",
@@ -1258,11 +1267,14 @@ class TarjetasService:
                 documento_consultor=payload.documento_consultor,
                 origen=origen,
                 ip=ip,
-                client_id=payload.client_id
+                client_id=payload.client_id,
+                id_lectura=payload.id_lectura,
+                fecha_lectura=payload.fecha_lectura
             )
+            mensaje = "Lectura previamente sincronizada (idempotencia confirmada)." if resultado.get("ya_registrado") else "Lectura registrada exitosamente."
             return {
                 "success": True,
-                "mensaje": "Lectura registrada exitosamente.",
+                "mensaje": mensaje,
                 "data": resultado
             }
         except PipelineException:

@@ -88,3 +88,18 @@ CREATE TABLE IF NOT EXISTS `tn_tarjetavirtual_certificados_expedidos` (
   KEY `idx_cert_doc` (`documento`),
   KEY `idx_cert_fecha` (`fecha_generacion`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- [2026-11-08] Desacoplamiento de seguridad: Token público de verificación independiente para QR del PDF
+ALTER TABLE `tn_tarjetavirtual_contadores`
+  ADD COLUMN IF NOT EXISTS `token_verificacion` VARCHAR(64) NULL DEFAULT NULL AFTER `hash_sha256`,
+  ADD KEY IF NOT EXISTS `idx_contadores_token_verif` (`token_verificacion`);
+
+ALTER TABLE `tn_tarjetavirtual_sociedades`
+  ADD COLUMN IF NOT EXISTS `token_verificacion` VARCHAR(64) NULL DEFAULT NULL AFTER `hash_sha256`,
+  ADD KEY IF NOT EXISTS `idx_sociedades_token_verif` (`token_verificacion`);
+
+-- [2026-11-08] Soporte de lecturas QR offline e idempotencia (id_lectura UUID y fecha_sincronizacion)
+ALTER TABLE 	n_tarjetavirtual_lecturas_historial
+  ADD COLUMN IF NOT EXISTS id_lectura VARCHAR(64) NULL DEFAULT NULL AFTER id,
+  ADD COLUMN IF NOT EXISTS echa_sincronizacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER echa,
+  ADD UNIQUE KEY IF NOT EXISTS uk_lect_id_lectura (id_lectura);
