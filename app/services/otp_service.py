@@ -117,9 +117,13 @@ class OtpService:
             url_enviar_otp = f"{bridge_base}/enviarOtp"
 
             headers_bridge = {
-                "Host": "local-jcc.nexura.com.co",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
             }
+            if any(k in url_enviar_otp for k in ("host.docker.internal", "localhost", "127.0.0.1")):
+                headers_bridge["Host"] = "local-jcc.nexura.com.co"
+
             nombre_titular = tarjeta.get("nombre") or tarjeta.get("razon_social") or "Usuario"
             payload_email = {
                 "correo": correo,
@@ -129,7 +133,7 @@ class OtpService:
             }
 
             logger.info(f"[OtpService] Despachando correo OTP a puente NX9: {url_enviar_otp}...")
-            async with httpx.AsyncClient(timeout=15.0) as http_client:
+            async with httpx.AsyncClient(timeout=15.0, verify=False) as http_client:
                 resp_mail = await http_client.post(url_enviar_otp, json=payload_email, headers=headers_bridge)
                 if resp_mail.status_code == 200:
                     data_mail = resp_mail.json()
