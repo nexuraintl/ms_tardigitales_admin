@@ -3053,9 +3053,14 @@ class TarjetasRepository:
                 if val:
                     return int(val)
 
-                # 2. Asignar nuevo consecutivo = MAX(consecutivo_soporte_activacion) + 1
+                # 2. Asignar nuevo consecutivo global = MAX(consecutivo_soporte_activacion) + 1 entre todas las tarjetas
                 await cursor.execute(
-                    f"SELECT IFNULL(MAX(consecutivo_soporte_activacion), 0) + 1 AS siguiente FROM {tabla}"
+                    """
+                    SELECT GREATEST(
+                        IFNULL((SELECT MAX(consecutivo_soporte_activacion) FROM tn_tarjetavirtual_contadores), 0),
+                        IFNULL((SELECT MAX(consecutivo_soporte_activacion) FROM tn_tarjetavirtual_sociedades), 0)
+                    ) + 1 AS siguiente
+                    """
                 )
                 res_max = await cursor.fetchone()
                 max_val = res_max.get("siguiente") if isinstance(res_max, dict) else (res_max[0] if res_max else 1)
