@@ -74,9 +74,12 @@ async def despachar_correo_activacion(
     url_enviar_activacion = f"{bridge_base}/enviarActivacion"
 
     headers_bridge = {
-        "Host": "local-jcc.nexura.com.co",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
     }
+    if any(k in url_enviar_activacion for k in ("host.docker.internal", "localhost", "127.0.0.1")):
+        headers_bridge["Host"] = "local-jcc.nexura.com.co"
 
     payload = {
         "correo": correo.strip(),
@@ -86,7 +89,7 @@ async def despachar_correo_activacion(
 
     try:
         logger.info(f"[NotificacionActivacion] Despachando correo de activación a puente NX9: {url_enviar_activacion} (Destino real: {correo})...")
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=20.0, verify=False) as client:
             resp = await client.post(url_enviar_activacion, json=payload, headers=headers_bridge)
             if resp.status_code == 200:
                 data = resp.json()
