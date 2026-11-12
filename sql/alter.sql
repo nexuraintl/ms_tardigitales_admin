@@ -99,7 +99,15 @@ ALTER TABLE `tn_tarjetavirtual_sociedades`
   ADD KEY IF NOT EXISTS `idx_sociedades_token_verif` (`token_verificacion`);
 
 -- [2026-11-08] Soporte de lecturas QR offline e idempotencia (id_lectura UUID y fecha_sincronizacion)
-ALTER TABLE 	n_tarjetavirtual_lecturas_historial
+ALTER TABLE tn_tarjetavirtual_lecturas_historial
   ADD COLUMN IF NOT EXISTS id_lectura VARCHAR(64) NULL DEFAULT NULL AFTER id,
-  ADD COLUMN IF NOT EXISTS echa_sincronizacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER echa,
+  ADD COLUMN IF NOT EXISTS fecha_sincronizacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER fecha,
   ADD UNIQUE KEY IF NOT EXISTS uk_lect_id_lectura (id_lectura);
+
+-- [2026-11-11] Consecutivo oficial para Soporte de Activación de Tarjeta Digital (HU Constancias de activación)
+ALTER TABLE `tn_tarjetavirtual_contadores`
+  ADD COLUMN IF NOT EXISTS `consecutivo_soporte_activacion` INT(11) NULL DEFAULT NULL AFTER `token_verificacion`;
+
+ALTER TABLE `tn_tarjetavirtual_sociedades`
+  ADD COLUMN IF NOT EXISTS `consecutivo_soporte_activacion` INT(11) NULL DEFAULT NULL AFTER `token_verificacion`;
+

@@ -2,10 +2,12 @@ import hashlib
 from datetime import datetime, date
 from typing import Dict, Any, Optional
 from app.repositories.certificados_repository import CertificadosRepository
+from app.services.certificado_pdf_service import CertificadoPdfService
 
 class CertificadosService:
     def __init__(self, repository: Optional[CertificadosRepository] = None):
         self.repo = repository or CertificadosRepository()
+        self.pdf_service = CertificadoPdfService()
 
     def _formatear_para_mfe(self, record: Dict[str, Any]) -> Dict[str, Any]:
         tipo_raw = (record.get("tipo") or "").lower()
@@ -87,6 +89,19 @@ class CertificadosService:
         # Simulación de respuesta de firma ONAC
         fecha_firma = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        # Consulta de configuración institucional vigente (Director General, cargo y firma)
+        config_inst = await self.repo.get_configuracion_institucional(client_id=client_id)
+        if "nombre_director" not in data and config_inst.get("nombre_director"):
+            data["nombre_director"] = config_inst["nombre_director"]
+        if "cargo_director" not in data and config_inst.get("cargo_director"):
+            data["cargo_director"] = config_inst["cargo_director"]
+        if "firma_director" not in data and config_inst.get("firma_director"):
+            data["firma_director"] = config_inst["firma_director"]
+
+        # Generación del PDF oficial y cálculo de huella digital
+        pdf_bytes = self.pdf_service.generar_pdf(data)
+        pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()
+
         db_payload = {
             "n_certificado": n_cert,
             "tipo": tipo,
@@ -98,7 +113,8 @@ class CertificadosService:
             "payload_detalles": detalles,
             "origen": "GENERADO" if data.get("Nuevo", True) else "REGENERADO",
             "ruta_pdf": f"certificados/{n_cert}.pdf",
-            "hash_sha256": hashlib.sha256(n_cert.encode()).hexdigest()
+            "hash_sha256": pdf_hash,
+            "pdf_bytes": pdf_bytes
         }
 
         await self.repo.guardar_certificado(db_payload, client_id=client_id)

@@ -1,8 +1,8 @@
 {
 	"info": {
-		"_postman_id": "c3a9f012-78d1-49b0-819a-certificados-myjcc",
-		"name": "JCC Certificados - Integración MyJCC",
-		"description": "Colección oficial para la integración entre MyJCC y Nexura Platform para la emisión y redescarga del Certificado de Vigencia y Antecedentes Disciplinarios.\n\nFlujo:\n1. Autenticación con Core Auth Token (/apig/core/auth/token).\n2. Invocación del servicio con Bearer Token (/apig/tardigitales/admin/certificados/procesar).\n3. Retorno del archivo binario PDF firmado.",
+		"_postman_id": "f29d8174-8142-498c-9c7b-certificados-doc",
+		"name": "JCC Certificados - Integración MyJCC (Documentación Oficial)",
+		"description": "Colección oficial de referencia técnica para terceros (MyJCC) para el consumo del servicio de autenticación y procesamiento de certificados en Preproducción.\n\nContenido:\n1. POST /apig/core/auth/token - Obtención del Bearer Token\n2. POST /apig/tardigitales/admin/certificados/procesar - Emisión Contador (Nuevo: true)\n3. POST /apig/tardigitales/admin/certificados/procesar - Emisión Sociedad (Nuevo: true)\n4. POST /apig/tardigitales/admin/certificados/procesar - Redescarga (Nuevo: false)",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"auth": {
@@ -43,7 +43,7 @@
 							"var jsonData = pm.response.json();",
 							"if (jsonData.access_token) {",
 							"    pm.collectionVariables.set('access_token', jsonData.access_token);",
-							"    console.log('✅ Access Token obtenido y asignado a {{access_token}}:', jsonData.access_token.substring(0, 25) + '...');",
+							"    console.log('✅ Access Token obtenido y asignado a {{access_token}}');",
 							"} else {",
 							"    console.error('❌ No se encontró access_token en la respuesta:', jsonData);",
 							"}"
@@ -69,7 +69,7 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"user\": \"cdiaz@skylabs.com.co\",\n  \"password\": \"Dakota13.\"\n}"
+					"raw": "{\n  \"client_id\": \"{{client_id}}\",\n  \"user\": \"tu_usuario\",\n  \"password\": \"tu_password\"\n}"
 				},
 				"url": {
 					"raw": "{{base_url}}/apig/core/auth/token",
@@ -83,7 +83,7 @@
 						"token"
 					]
 				},
-				"description": "Autenticación central contra el Core API Gateway. El access_token retornado se almacena automáticamente en la variable {{access_token}} de la colección para autorizar el resto de llamadas."
+				"description": "Endpoint de autenticación para obtener el token JWT. Reemplazar tu_client_id, tu_usuario y tu_password con las credenciales suministradas."
 			},
 			"response": []
 		},
@@ -103,7 +103,7 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n  \"Nuevo\": true,\n  \"fechaGeneracion\": \"2026-11-07\",\n  \"tipo\": \"contador\",\n  \"documento\": \"1000000000\",\n  \"N_CERTIFICADO\": \"CERT-CON-2026-001\",\n  \"historia\": \"5\",\n  \"dirigido\": \"A QUIEN INTERESE\",\n  \"Detalles\": {\n    \"CON_CODIGO\": 100001,\n    \"CON_NOMBRES\": \"CARLOS ANDRES\",\n    \"CON_APELLIDO1\": \"PEREZ\",\n    \"CON_APELLIDO2\": \"GOMEZ\",\n    \"TDOC_CODIGO\": \"CC\",\n    \"CON_NRO_DOCUMENTO\": 1000000000,\n    \"MUNICIPIO_DOCUMENTO\": \"BOGOTA D.C.\",\n    \"DEPARTAMENTO_DOCUMENTO\": \"BOGOTA D.C.\",\n    \"CON_NRO_TARJETA\": 123456,\n    \"CON_TIPO_TARJETA\": \"T\",\n    \"ESTADO\": \"ACTIVO\",\n    \"CON_FECHA_ACTUALIZACION\": \"2026-10-15 08:30:00\",\n    \"ANTECEDENTES\": [\n      {\n        \"SAN_TIPO\": \"S\",\n        \"SAN_MESES\": 12,\n        \"SAN_RESOLUCION\": \"T-000-0001\",\n        \"SAN_FECHA_RESOLUCION\": \"2025-01-15 00:00:00\",\n        \"SAN_FECHA_EJECUTORIA\": \"2025-02-04 00:00:00\",\n        \"SAN_FECHA_FIN\": \"2026-02-04 00:00:00\"\n      }\n    ]\n  }\n}"
+					"raw": "{\n  \"Nuevo\": true,\n  \"fechaGeneracion\": \"2026-10-12\",\n  \"tipo\": \"contador\",\n  \"documento\": \"1000000000\",\n  \"N_CERTIFICADO\": \"0221114451sa\",\n  \"historia\": \"5\",\n  \"dirigido\": \"QUIEN INTERESE\",\n  \"Detalles\": {\n    \"CON_CODIGO\": 100001,\n    \"CON_NOMBRES\": \"CARLOS ANDRES\",\n    \"CON_APELLIDO1\": \"PEREZ\",\n    \"CON_APELLIDO2\": \"GOMEZ\",\n    \"TDOC_CODIGO\": \"CC\",\n    \"CON_NRO_DOCUMENTO\": 1000000000,\n    \"MUNICIPIO_DOCUMENTO\": \"BOGOTA D.C.\",\n    \"DEPARTAMENTO_DOCUMENTO\": \"BOGOTA D.C.\",\n    \"CON_NRO_TARJETA\": 123456,\n    \"CON_TIPO_TARJETA\": \"T\",\n    \"CON_SEXO\": \"M\",\n    \"ESTADO\": \"ACTIVO\",\n    \"CON_FECHA_ACTUALIZACION\": \"2026-10-15 08:30:00\",\n    \"EMAIL\": \"carlos.perez@ejemplo.com\",\n    \"ANTECEDENTES\": [\n      {\n        \"SAN_TIPO\": \"S\",\n        \"SAN_MESES\": 12,\n        \"SAN_RESOLUCION\": \"T-000-0001\",\n        \"SAN_FECHA_RESOLUCION\": \"2025-01-15 00:00:00\",\n        \"SAN_FECHA_EJECUTORIA\": \"2025-02-04 00:00:00\",\n        \"SAN_FECHA_FIN\": \"2026-02-04 00:00:00\"\n      }\n    ]\n  }\n}"
 				},
 				"url": {
 					"raw": "{{base_url}}/apig/tardigitales/admin/certificados/procesar",
@@ -118,7 +118,7 @@
 						"procesar"
 					]
 				},
-				"description": "Primera emisión de certificado de vigencia y antecedentes para contador público (Nuevo: true). Retorna el archivo binario PDF."
+				"description": "Primera emisión de certificado para contador público (Nuevo: true). Retorna 200 OK con el stream binario del PDF firmado digitalmente."
 			},
 			"response": []
 		},
@@ -138,7 +138,7 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n  \"Nuevo\": true,\n  \"fechaGeneracion\": \"2026-11-07\",\n  \"tipo\": \"sociedad\",\n  \"documento\": \"9005408655\",\n  \"N_CERTIFICADO\": \"CERT-SOC-2026-002\",\n  \"historia\": \"5\",\n  \"dirigido\": \"SUPERINTENDENCIA DE SOCIEDADES\",\n  \"Detalles\": {\n    \"SOC_CODIGO\": 50012,\n    \"SOC_RAZON_SOCIAL\": \"AUDITORES Y ASOCIADOS DEL PACIFICO S.A.S.\",\n    \"TDOC_CODIGO\": \"NIT\",\n    \"SOC_NUMERO_DOCUMENTO\": \"900540865-5\",\n    \"SOC_REPRESENTANTE_LEGAL\": \"MARIA FERNANDA BOTERO\",\n    \"MUNICIPIO\": \"CALI\",\n    \"DEPARTAMENTO\": \"VALLE DEL CAUCA\",\n    \"ESTADO\": \"ACTIVO\",\n    \"SOC_FECHA_ACTUALIZACION\": \"2026-11-01 14:20:00\",\n    \"ANTECEDENTES\": []\n  }\n}"
+					"raw": "{\n  \"Nuevo\": true,\n  \"fechaGeneracion\": \"2026-10-15\",\n  \"tipo\": \"sociedad\",\n  \"documento\": \"900000000\",\n  \"N_CERTIFICADO\": \"CERT-SOC-2026-0002\",\n  \"historia\": \"5\",\n  \"dirigido\": \"QUIEN INTERESE\",\n  \"Detalles\": {\n    \"SOC_RAZON_SOCIAL\": \"AUDITORES Y ASESORES CONTABLES S.A.S.\",\n    \"SOC_NIT\": \"900000000\",\n    \"SOC_CODIGO\": 90012,\n    \"SOC_REPRESENTANTE_LEGAL\": \"MARIA FERNANDA LOPEZ\",\n    \"SOC_TIPO_DOCUMENTO_REP\": \"CC\",\n    \"MUNICIPIO\": \"MEDELLIN\",\n    \"DEPARTAMENTO\": \"ANTIOQUIA\",\n    \"ESTADO\": \"ACTIVO\",\n    \"SOC_FECHA_ACTUALIZACION\": \"2026-10-15 08:30:00\",\n    \"EMAIL\": \"contacto@auditoresasesores.com\",\n    \"ANTECEDENTES\": []\n  }\n}"
 				},
 				"url": {
 					"raw": "{{base_url}}/apig/tardigitales/admin/certificados/procesar",
@@ -153,7 +153,7 @@
 						"procesar"
 					]
 				},
-				"description": "Primera emisión de certificado de vigencia y antecedentes para firma o sociedad de contadores (Nuevo: true)."
+				"description": "Primera emisión de certificado para sociedad de contadores (Nuevo: true). Retorna 200 OK con el stream binario del PDF firmado digitalmente."
 			},
 			"response": []
 		},
@@ -173,7 +173,7 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n  \"Nuevo\": false,\n  \"fechaGeneracion\": \"2026-11-07\",\n  \"tipo\": \"contador\",\n  \"documento\": \"1000000000\",\n  \"N_CERTIFICADO\": \"CERT-CON-2026-001\",\n  \"historia\": \"5\",\n  \"dirigido\": \"A QUIEN INTERESE\",\n  \"Detalles\": {\n    \"CON_CODIGO\": 100001,\n    \"CON_NOMBRES\": \"CARLOS ANDRES\",\n    \"CON_APELLIDO1\": \"PEREZ\",\n    \"CON_APELLIDO2\": \"GOMEZ\",\n    \"TDOC_CODIGO\": \"CC\",\n    \"CON_NRO_DOCUMENTO\": 1000000000,\n    \"CON_NRO_TARJETA\": 123456,\n    \"CON_TIPO_TARJETA\": \"T\",\n    \"ESTADO\": \"ACTIVO\",\n    \"ANTECEDENTES\": []\n  }\n}"
+					"raw": "{\n  \"Nuevo\": false,\n  \"fechaGeneracion\": \"2026-10-12\",\n  \"tipo\": \"contador\",\n  \"documento\": \"1000000000\",\n  \"N_CERTIFICADO\": \"0221114451sa\",\n  \"historia\": \"5\",\n  \"dirigido\": \"QUIEN INTERESE\",\n  \"Detalles\": {\n    \"CON_NOMBRES\": \"CARLOS ANDRES\",\n    \"CON_APELLIDO1\": \"PEREZ\",\n    \"CON_APELLIDO2\": \"GOMEZ\",\n    \"TDOC_CODIGO\": \"CC\",\n    \"CON_NRO_DOCUMENTO\": 1000000000,\n    \"CON_NRO_TARJETA\": 123456,\n    \"CON_TIPO_TARJETA\": \"T\",\n    \"ESTADO\": \"ACTIVO\",\n    \"CON_FECHA_ACTUALIZACION\": \"2026-10-15 08:30:00\",\n    \"EMAIL\": \"carlos.perez@ejemplo.com\",\n    \"ANTECEDENTES\": []\n  }\n}"
 				},
 				"url": {
 					"raw": "{{base_url}}/apig/tardigitales/admin/certificados/procesar",
@@ -188,7 +188,7 @@
 						"procesar"
 					]
 				},
-				"description": "Redescarga de un certificado previamente generado (Nuevo: false). Busca en la BD por N_CERTIFICADO y retorna el PDF correspondiente."
+				"description": "Redescarga de certificado existente (Nuevo: false). Retorna el PDF firmado con cabecera X-Origen-Documento: REGENERADO o ALMACENADO."
 			},
 			"response": []
 		}
