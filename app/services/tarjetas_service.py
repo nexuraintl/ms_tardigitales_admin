@@ -392,6 +392,55 @@ class TarjetasService:
         filename = f"tarjeta_{prefijo}_{clean_id}.pdf"
         return pdf_bytes, filename
 
+    async def generar_constancia_activacion(
+        self,
+        tarjeta_id: int,
+        tipo_tarjeta: Optional[str] = None,
+        client_id: Optional[int] = None
+    ) -> Tuple[bytes, str]:
+        tarjeta = await self.get_tarjeta(tarjeta_id, tipo_tarjeta, client_id)
+        if not tarjeta:
+            raise PipelineException(
+                etapa="CONSTANCIA_ACTIVACION",
+                mensaje="No se encontró la tarjeta consultada.",
+                cliente_id=client_id or 20001,
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+
+        estado_actual = str(tarjeta.get("estado_tarjeta") or tarjeta.get("estado") or "").strip()
+        if estado_actual.lower() not in ["activa", "activo"]:
+            raise PipelineException(
+                etapa="CONSTANCIA_ACTIVACION",
+                mensaje=f"La tarjeta se encuentra en estado '{estado_actual}'. La constancia de activación solo está disponible para tarjetas en estado Activa.",
+                cliente_id=client_id or 20001,
+                status_code=status.HTTP_409_CONFLICT
+            )
+
+        is_sociedad = bool(tarjeta.get("nit") or (tipo_tarjeta and tipo_tarjeta.lower() in ["sociedades", "sociedad"]))
+        tipo_str = "sociedades" if is_sociedad else "contadores"
+
+        # Obtener o asignar consecutivo oficial (persiste en BD)
+        consecutivo = await self.repository.obtener_o_asignar_consecutivo_activacion(
+            tarjeta_id=tarjeta_id,
+            tipo_tarjeta=tipo_str,
+            client_id=client_id
+        )
+
+        datos = dict(tarjeta)
+        datos["tipo_tarjeta"] = tipo_str
+        datos["consecutivo_soporte_activacion"] = consecutivo
+
+        from app.services.constancia_activacion_pdf_service import ConstanciaActivacionPdfService
+        pdf_service = ConstanciaActivacionPdfService()
+        pdf_bytes = pdf_service.generar_pdf(datos)
+
+        prefijo = "sociedad" if is_sociedad else "contador"
+        id_val = tarjeta.get("nit") if is_sociedad else (tarjeta.get("no_tarjeta") or tarjeta.get("no_documento") or tarjeta_id)
+        clean_id = "".join(c for c in str(id_val) if c.isalnum() or c in ("-", "_"))
+        filename = f"constancia_activacion_{prefijo}_{clean_id}.pdf"
+        return pdf_bytes, filename
+
+
     async def create_tarjeta_contador(
         self,
         documento: str,

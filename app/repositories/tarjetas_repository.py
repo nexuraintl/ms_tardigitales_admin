@@ -293,6 +293,7 @@ class TarjetasRepository:
                             ttc.foto,
                             ttc.hash_sha256,
                             ttc.token_verificacion,
+                            ttc.consecutivo_soporte_activacion,
                             (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = ttc.id AND teh.estado = 'Activa') AS fecha_activacion
                     """
                 else:
@@ -318,6 +319,7 @@ class TarjetasRepository:
                             tts.foto,
                             tts.hash_sha256,
                             tts.token_verificacion,
+                            tts.consecutivo_soporte_activacion,
                             (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = tts.id AND teh.estado = 'Activa') AS fecha_activacion
                     """
 
@@ -374,6 +376,7 @@ class TarjetasRepository:
             ttc.foto,
             ttc.hash_sha256,
             ttc.token_verificacion,
+            ttc.consecutivo_soporte_activacion,
             (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = ttc.id AND teh.estado = 'Activa') AS fecha_activacion
         FROM tn_tarjetavirtual_contadores ttc
     """
@@ -400,6 +403,7 @@ class TarjetasRepository:
             tts.foto,
             tts.hash_sha256,
             tts.token_verificacion,
+            tts.consecutivo_soporte_activacion,
             (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = tts.id AND teh.estado = 'Activa') AS fecha_activacion
         FROM tn_tarjetavirtual_sociedades tts
     """
@@ -3028,3 +3032,40 @@ class TarjetasRepository:
                 return items, total
         finally:
             conn.close()
+
+    async def obtener_o_asignar_consecutivo_activacion(
+        self,
+        tarjeta_id: int,
+        tipo_tarjeta: str = "contadores",
+        client_id: Optional[int] = None
+    ) -> int:
+        tabla = "tn_tarjetavirtual_sociedades" if tipo_tarjeta == "sociedades" else "tn_tarjetavirtual_contadores"
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                # 1. Verificar si ya tiene consecutivo asignado
+                await cursor.execute(
+                    f"SELECT consecutivo_soporte_activacion FROM {tabla} WHERE id = %s",
+                    (tarjeta_id,)
+                )
+                row = await cursor.fetchone()
+                val = row.get("consecutivo_soporte_activacion") if isinstance(row, dict) else (row[0] if row else None)
+                if val:
+                    return int(val)
+
+                # 2. Asignar nuevo consecutivo = MAX(consecutivo_soporte_activacion) + 1
+                await cursor.execute(
+                    f"SELECT IFNULL(MAX(consecutivo_soporte_activacion), 0) + 1 AS siguiente FROM {tabla}"
+                )
+                res_max = await cursor.fetchone()
+                max_val = res_max.get("siguiente") if isinstance(res_max, dict) else (res_max[0] if res_max else 1)
+                siguiente = int(max_val) if max_val else 1
+
+                await cursor.execute(
+                    f"UPDATE {tabla} SET consecutivo_soporte_activacion = %s WHERE id = %s",
+                    (siguiente, tarjeta_id)
+                )
+                return siguiente
+        finally:
+            conn.close()
+
