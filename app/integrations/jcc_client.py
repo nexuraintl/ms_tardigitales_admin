@@ -86,6 +86,8 @@ class JccClient:
             "Accept": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         }
+        if any(k in url for k in ("host.docker.internal", "localhost", "127.0.0.1")):
+            headers["Host"] = "local-jcc.nexura.com.co"
 
         resolved_client_id = client_id or int(os.getenv("CLIENT_ID", "20001"))
         start_time = time.perf_counter()
