@@ -171,6 +171,30 @@ async def export_tarjeta_pdf(
     )
 
 
+@router.get("/{id}/constancia-activacion")
+@router.get("/get/{id}/constancia-activacion")
+async def export_constancia_activacion_pdf(
+    request: Request,
+    id: int = Path(..., description="ID de la tarjeta"),
+    tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    download: bool = Query(True, description="Si es True fuerza la descarga como attachment")
+):
+    pdf_bytes, filename = await service.generar_constancia_activacion(id, tipo_tarjeta, client_id)
+    disposition = "attachment" if download else "inline"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'{disposition}; filename="{filename}"',
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
+
+
+
 @router.get("/verificar/{hash}/pdf")
 @router.get("/get-by-hash/{hash}/pdf")
 async def export_tarjeta_pdf_by_hash(

@@ -145,3 +145,51 @@ class CertificadosRepository:
                 return cur.lastrowid
         finally:
             conn.close()
+
+    async def get_configuracion_institucional(self, client_id: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Obtiene la configuración institucional vigente (Director General, cargo y firma oficial)
+        desde la tabla tn_tarjetavirtual_configuracion_institucional.
+        """
+        default_config = {
+            "nombre_director": "SANDRA MILENA BARRIOS PULIDO",
+            "cargo_director": "DIRECTOR GENERAL",
+            "firma_director": None
+        }
+        try:
+            conn = await get_client_connection(client_id)
+            try:
+                import aiomysql
+                async with conn.cursor(aiomysql.DictCursor) as cur:
+                    sql = """
+                        SELECT nombre_director, cargo_director, firma_director
+                        FROM tn_tarjetavirtual_configuracion_institucional
+                        WHERE publicado = 1
+                        ORDER BY version DESC
+                        LIMIT 1
+                    """
+                    await cur.execute(sql)
+                    row = await cur.fetchone()
+                    if not row:
+                        sql_fallback = """
+                            SELECT nombre_director, cargo_director, firma_director
+                            FROM tn_tarjetavirtual_configuracion_institucional
+                            ORDER BY version DESC
+                            LIMIT 1
+                        """
+                        await cur.execute(sql_fallback)
+                        row = await cur.fetchone()
+
+                    if row:
+                        return {
+                            "nombre_director": row.get("nombre_director") or default_config["nombre_director"],
+                            "cargo_director": row.get("cargo_director") or default_config["cargo_director"],
+                            "firma_director": row.get("firma_director")
+                        }
+            finally:
+                conn.close()
+        except Exception as e:
+            # Fallback seguro a los datos institucionales por defecto
+            pass
+
+        return default_config
