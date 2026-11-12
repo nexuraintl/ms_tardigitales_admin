@@ -2,9 +2,11 @@ from fastapi import APIRouter, Query, Path, HTTPException, status, Response
 from typing import Optional
 from app.schemas.certificados import ProcesarCertificadoRequest, CertificadosListResponse, CertificadoItemResponse
 from app.services.certificados_service import CertificadosService
+from app.services.certificado_pdf_service import CertificadoPdfService
 
 router = APIRouter()
 certificados_service = CertificadosService()
+certificado_pdf_service = CertificadoPdfService()
 
 @router.get("", response_model=CertificadosListResponse, summary="Listar certificados unificados para el MFE")
 async def listar_certificados(
@@ -34,8 +36,15 @@ async def descargar_pdf(n_certificado: str = Path(..., description="Número úni
     if not cert:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificado no encontrado")
     
-    # Contenido binario PDF mínimo para simulación oficial
-    pdf_bytes = b"%PDF-1.4\n1 0 obj\n<< /Title (Certificado Oficial) >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF"
+    config_inst = await certificados_service.repo.get_configuracion_institucional()
+    if "nombre_director" not in cert and config_inst.get("nombre_director"):
+        cert["nombre_director"] = config_inst["nombre_director"]
+    if "cargo_director" not in cert and config_inst.get("cargo_director"):
+        cert["cargo_director"] = config_inst["cargo_director"]
+    if "firma_director" not in cert and config_inst.get("firma_director"):
+        cert["firma_director"] = config_inst["firma_director"]
+
+    pdf_bytes = certificado_pdf_service.generar_pdf(cert)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -51,14 +60,14 @@ async def descargar_pdf(n_certificado: str = Path(..., description="Número úni
 async def procesar_certificado(req: ProcesarCertificadoRequest):
     data = req.dict()
     guardado = await certificados_service.procesar_solicitud_myjcc(data)
+    pdf_bytes = guardado.get("pdf_bytes") or certificado_pdf_service.generar_pdf(data)
     
-    pdf_bytes = b"%PDF-1.4\n1 0 obj\n<< /Title (Certificado Firmado ONAC) >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
             "Content-Disposition": f'attachment; filename="certificado-{req.N_CERTIFICADO}.pdf"',
             "X-Numero-Certificado": req.N_CERTIFICADO,
-            "X-Origen-Documento": guardado["origen"]
+            "X-Origen-Documento": guardado.get("origen", "GENERADO")
         }
     )
