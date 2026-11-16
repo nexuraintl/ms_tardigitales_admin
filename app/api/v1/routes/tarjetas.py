@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Request, Response, Query, HTTPException, Path, Body, Form, File, UploadFile, BackgroundTasks, status
+from fastapi import APIRouter, Depends, Request, Response, Query, HTTPException, Path, Body, Form, File, UploadFile, BackgroundTasks, status
 from urllib.parse import urlsplit
 from typing import List, Dict, Any, Optional
 from app.services.tarjetas_service import TarjetasService
 from app.utils.image_utils import ImageUtils
+from app.core.permissions import AuthContext, PERMISSIONS, get_auth_context, require_permission
 from app.schemas.tarjetas_schema import (
     ActivacionMovilRequestSchema,
     RegistroLecturaRequestSchema,
@@ -51,8 +52,20 @@ async def list_tarjetas(
     estado_tarjeta: Optional[str] = Query(None, description="Estado de la tarjeta"),
     estado_contador: Optional[str] = Query(None, description="Estado del contador"),
     estado_sociedad: Optional[str] = Query(None, description="Estado de la sociedad"),
-    tipo_asociado: Optional[str] = Query(None, description="Tipo de trámite / asociado")
+    tipo_asociado: Optional[str] = Query(None, description="Tipo de trámite / asociado"),
+    auth_ctx: AuthContext = Depends(get_auth_context),
 ):
+    if (tipo_tarjeta or "").lower() in ("sociedades", "sociedad", "society"):
+        auth_ctx.ensure_any_permission(PERMISSIONS.SOC_LISTADO, PERMISSIONS.REP_SOC_LISTADO_CSV)
+    elif (tipo_tarjeta or "").lower() in ("contadores", "contador", "accountant"):
+        auth_ctx.ensure_any_permission(PERMISSIONS.CONT_LISTADO, PERMISSIONS.REP_CONT_LISTADO_CSV)
+    else:
+        auth_ctx.ensure_any_permission(
+            PERMISSIONS.CONT_LISTADO,
+            PERMISSIONS.REP_CONT_LISTADO_CSV,
+            PERMISSIONS.SOC_LISTADO,
+            PERMISSIONS.REP_SOC_LISTADO_CSV,
+        )
     
     filtros = {
         "texto": texto,
@@ -96,12 +109,41 @@ async def consult_registry(
     documento: str = Query(..., min_length=3, description="Número de documento de identidad o NIT a consultar (obligatorio)"),
     tipo_tarjeta: str = Query("contadores", description="Tipo de registro ('contadores' o 'sociedades')"),
     tipo: Optional[str] = Query("", description="Tipo de consulta ('primeraVez', 'modificacion', etc.)"),
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    auth_ctx: AuthContext = Depends(get_auth_context),
 ):
+    if (tipo_tarjeta or "").lower() in ("sociedades", "sociedad", "society"):
+        auth_ctx.ensure_any_permission(
+            PERMISSIONS.SOC_NUEVA_TARJETA,
+            PERMISSIONS.SOC_REGENERAR,
+            PERMISSIONS.REP_SOC_REGENERAR,
+        )
+    else:
+        auth_ctx.ensure_any_permission(
+            PERMISSIONS.CONT_NUEVA_TARJETA,
+            PERMISSIONS.CONT_REGENERAR,
+            PERMISSIONS.REP_CONT_REGENERAR,
+        )
     return await service.consult_registry(documento, tipo_tarjeta, tipo, client_id)
 
 
-@router.get("/get/{id}")
+@router.get(
+    "/get/{id}",
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.CONT_DETALLES,
+                PERMISSIONS.CONT_VER_TARJETA,
+                PERMISSIONS.REP_CONT_DETALLES,
+                PERMISSIONS.REP_CONT_VER_TARJETA,
+                PERMISSIONS.SOC_DETALLES,
+                PERMISSIONS.SOC_VER_TARJETA,
+                PERMISSIONS.REP_SOC_DETALLES,
+                PERMISSIONS.REP_SOC_VER_TARJETA,
+            )
+        )
+    ],
+)
 async def get_tarjeta(
     request: Request,
     id: int = Path(..., description="ID de la tarjeta"),
@@ -147,8 +189,32 @@ async def verificar_tarjeta_query(
     return await service.get_tarjeta_by_hash(target_hash, tipo_tarjeta, client_id, sanitizar=sanitizar, ip=ip, auto_log=True)
 
 
-@router.get("/pdf/{id}")
-@router.get("/get/{id}/pdf")
+@router.get(
+    "/pdf/{id}",
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.CONT_EXPORTAR_TARJETA,
+                PERMISSIONS.REP_CONT_EXPORTAR,
+                PERMISSIONS.SOC_EXPORTAR_TARJETA,
+                PERMISSIONS.REP_SOC_EXPORTAR,
+            )
+        )
+    ],
+)
+@router.get(
+    "/get/{id}/pdf",
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.CONT_EXPORTAR_TARJETA,
+                PERMISSIONS.REP_CONT_EXPORTAR,
+                PERMISSIONS.SOC_EXPORTAR_TARJETA,
+                PERMISSIONS.REP_SOC_EXPORTAR,
+            )
+        )
+    ],
+)
 async def export_tarjeta_pdf(
     request: Request,
     id: int = Path(..., description="ID de la tarjeta"),
@@ -171,8 +237,32 @@ async def export_tarjeta_pdf(
     )
 
 
-@router.get("/{id}/constancia-activacion")
-@router.get("/get/{id}/constancia-activacion")
+@router.get(
+    "/{id}/constancia-activacion",
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.CONT_EXPORTAR_TARJETA,
+                PERMISSIONS.REP_CONT_EXPORTAR,
+                PERMISSIONS.SOC_EXPORTAR_TARJETA,
+                PERMISSIONS.REP_SOC_EXPORTAR,
+            )
+        )
+    ],
+)
+@router.get(
+    "/get/{id}/constancia-activacion",
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.CONT_EXPORTAR_TARJETA,
+                PERMISSIONS.REP_CONT_EXPORTAR,
+                PERMISSIONS.SOC_EXPORTAR_TARJETA,
+                PERMISSIONS.REP_SOC_EXPORTAR,
+            )
+        )
+    ],
+)
 async def export_constancia_activacion_pdf(
     request: Request,
     id: int = Path(..., description="ID de la tarjeta"),
@@ -219,14 +309,40 @@ async def export_tarjeta_pdf_by_hash(
     )
 
 
-@router.post("/create")
+@router.post(
+    "/create",
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.CONT_NUEVA_TARJETA,
+                PERMISSIONS.CONT_REGENERAR,
+                PERMISSIONS.REP_CONT_REGENERAR,
+                PERMISSIONS.SOC_NUEVA_TARJETA,
+                PERMISSIONS.SOC_REGENERAR,
+                PERMISSIONS.REP_SOC_REGENERAR,
+            )
+        )
+    ],
+)
 async def create_tarjeta(
     data: TarjetaCreateSchema = Body(...),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
 ):
     return await service.create_tarjeta(data, client_id)
 
-@router.get("/historial/{id}")
+@router.get(
+    "/historial/{id}",
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.CONT_HISTORIAL,
+                PERMISSIONS.REP_CONT_HISTORIAL,
+                PERMISSIONS.SOC_HISTORIAL,
+                PERMISSIONS.REP_SOC_HISTORIAL,
+            )
+        )
+    ],
+)
 async def get_historial(
     request: Request,
     id: int = Path(..., description="ID de la tarjeta"),
@@ -246,12 +362,29 @@ async def get_validador_config(
 async def update_validador_config(
     data: ValidadorConfigSchema = Body(...),
     tipo_tarjeta: Optional[str] = Query(None, description="Tipo de tarjeta ('contadores' o 'sociedades')"),
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    auth_ctx: AuthContext = Depends(get_auth_context),
 ):
     tipo = tipo_tarjeta or getattr(data, 'tipo_tarjeta', None) or "contadores"
+    if str(tipo).lower() in ("sociedades", "sociedad", "society"):
+        auth_ctx.ensure_permission(PERMISSIONS.VAL_QR_SOCIEDADES)
+    else:
+        auth_ctx.ensure_permission(PERMISSIONS.VAL_QR_CONTADORES)
     return await service.save_validador_config(data, tipo, client_id)
 
-@router.get("/columns-config")
+@router.get(
+    "/columns-config",
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.CONT_LISTADO,
+                PERMISSIONS.REP_CONT_LISTADO_CSV,
+                PERMISSIONS.SOC_LISTADO,
+                PERMISSIONS.REP_SOC_LISTADO_CSV,
+            )
+        )
+    ],
+)
 async def get_columns_config(
     tipo_tarjeta: str = Query("contadores", description="Tipo de tarjeta ('contadores' o 'sociedades')"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
@@ -281,7 +414,12 @@ async def create_branding_credentials(
     usuario_creacion_id: int = Form(...),
     tipo_id: int = Form(...),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    auth_ctx: AuthContext = Depends(get_auth_context),
 ):
+    if int(tipo_id) == 2:
+        auth_ctx.ensure_permission(PERMISSIONS.BRAND_SOC_GUARDAR)
+    else:
+        auth_ctx.ensure_permission(PERMISSIONS.BRAND_CONT_GUARDAR)
     logo_base64 = await ImageUtils.upload_to_base64(logo)
     patron_base64 = await ImageUtils.upload_to_base64(patron)
     logo_imp_b64 = await ImageUtils.upload_to_base64(logo_impresion) if logo_impresion else logo_impresion_base64
@@ -308,7 +446,17 @@ async def create_branding_credentials(
 
     return await service.create_or_update_branding_credentials(data, client_id)
 
-@router.put("/branding-credentials/update/change-version/{id}")
+@router.put(
+    "/branding-credentials/update/change-version/{id}",
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.BRAND_CONT_PUBLICAR,
+                PERMISSIONS.BRAND_SOC_PUBLICAR,
+            )
+        )
+    ],
+)
 async def update_branding_credentials(
     id: int = Path(..., description="ID único del Branding credentials"),
     data: BrandingCredentialsUpdateSchema = Body(...),
@@ -335,8 +483,13 @@ async def list_history_branding_credentials(
     id: int = Path(..., description="ID Branding credentials"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
     page: int = Query(1, ge=1, description="Número de página a consultar"),
-    page_size: int = Query(10, ge=1, le=100, description="Cantidad de registros por página (máx 100)")
+    page_size: int = Query(10, ge=1, le=100, description="Cantidad de registros por página (máx 100)"),
+    auth_ctx: AuthContext = Depends(get_auth_context),
 ):
+    if int(id) == 2:
+        auth_ctx.ensure_permission(PERMISSIONS.BRAND_SOC_VER)
+    else:
+        auth_ctx.ensure_permission(PERMISSIONS.BRAND_CONT_VER)
     return await service.list_history_branding_credentials(id, client_id, page, page_size)
 
 # =============================================================================
@@ -349,16 +502,28 @@ async def get_institucional_published(
 ):
     return await service.get_institucional_published(client_id)
 
-@router.post("/branding-credentials/institucional/create")
-@router.post("/branding-institucional/create")
+@router.post(
+    "/branding-credentials/institucional/create",
+    dependencies=[Depends(require_permission(PERMISSIONS.BRAND_FIRMA_GUARDAR))],
+)
+@router.post(
+    "/branding-institucional/create",
+    dependencies=[Depends(require_permission(PERMISSIONS.BRAND_FIRMA_GUARDAR))],
+)
 async def create_institucional_version(
     data: InstitucionalConfigCreateSchema = Body(...),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
 ):
     return await service.create_institucional_version(data, client_id)
 
-@router.get("/branding-credentials/institucional/list-history-versions")
-@router.get("/branding-institucional/list-history-versions")
+@router.get(
+    "/branding-credentials/institucional/list-history-versions",
+    dependencies=[Depends(require_permission(PERMISSIONS.BRAND_FIRMA_VER))],
+)
+@router.get(
+    "/branding-institucional/list-history-versions",
+    dependencies=[Depends(require_permission(PERMISSIONS.BRAND_FIRMA_VER))],
+)
 async def list_institucional_history(
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
     page: int = Query(1, ge=1, description="Número de página a consultar"),
@@ -366,8 +531,14 @@ async def list_institucional_history(
 ):
     return await service.list_institucional_history(client_id, page, page_size)
 
-@router.put("/branding-credentials/institucional/update/change-version/{id}")
-@router.put("/branding-institucional/update/change-version/{id}")
+@router.put(
+    "/branding-credentials/institucional/update/change-version/{id}",
+    dependencies=[Depends(require_permission(PERMISSIONS.BRAND_FIRMA_PUBLICAR))],
+)
+@router.put(
+    "/branding-institucional/update/change-version/{id}",
+    dependencies=[Depends(require_permission(PERMISSIONS.BRAND_FIRMA_PUBLICAR))],
+)
 async def publish_institucional_version(
     id: int = Path(..., description="ID de la versión institucional a publicar"),
     data: Optional[InstitucionalConfigUpdateSchema] = Body(None),
@@ -378,8 +549,16 @@ async def publish_institucional_version(
 
 
 # Auditoria API
-@router.get("/audit-api/list", response_model=Dict[str, Any])
-@router.get("/auditoria-api/list", response_model=Dict[str, Any])
+@router.get(
+    "/audit-api/list",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_permission(PERMISSIONS.AUDITORIA_API_REG))],
+)
+@router.get(
+    "/auditoria-api/list",
+    response_model=Dict[str, Any],
+    dependencies=[Depends(require_permission(PERMISSIONS.AUDITORIA_API_REG))],
+)
 async def list_auditoria_api(
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
     page: int = Query(1, ge=1, description="Número de página a consultar"),
@@ -404,8 +583,30 @@ async def list_auditoria_api(
     )
 
 # Contador creacion
-@router.post('/contador/create')
-@router.post('/accountant/create')
+@router.post(
+    '/contador/create',
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.CONT_NUEVA_TARJETA,
+                PERMISSIONS.CONT_REGENERAR,
+                PERMISSIONS.REP_CONT_REGENERAR,
+            )
+        )
+    ],
+)
+@router.post(
+    '/accountant/create',
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.CONT_NUEVA_TARJETA,
+                PERMISSIONS.CONT_REGENERAR,
+                PERMISSIONS.REP_CONT_REGENERAR,
+            )
+        )
+    ],
+)
 async def create_tarjeta_contador(
     data: ConsultaTarjetaSchema = Body(...),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
@@ -417,8 +618,30 @@ async def create_tarjeta_contador(
     )
 
 # society creacion
-@router.post('/sociedad/create')
-@router.post('/society/create')
+@router.post(
+    '/sociedad/create',
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.SOC_NUEVA_TARJETA,
+                PERMISSIONS.SOC_REGENERAR,
+                PERMISSIONS.REP_SOC_REGENERAR,
+            )
+        )
+    ],
+)
+@router.post(
+    '/society/create',
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.SOC_NUEVA_TARJETA,
+                PERMISSIONS.SOC_REGENERAR,
+                PERMISSIONS.REP_SOC_REGENERAR,
+            )
+        )
+    ],
+)
 async def create_tarjeta_sociedad(
     data: ConsultaTarjetaSchema = Body(...),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
@@ -430,7 +653,17 @@ async def create_tarjeta_sociedad(
     )
 
 # HU-JCC-005: Tarea programada de emision recurrente bajo demanda
-@router.post('/emision-recurrente/ejecutar')
+@router.post(
+    '/emision-recurrente/ejecutar',
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.CONT_EMISION_MASIVA,
+                PERMISSIONS.SOC_EMISION_MASIVA,
+            )
+        )
+    ],
+)
 async def ejecutar_emision_recurrente(
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
 ):
@@ -443,8 +676,13 @@ async def ejecutar_emision_recurrente(
 async def emision_masiva(
     payload: EmisionMasivaRequestSchema = Body(...),
     background_tasks: BackgroundTasks = None,
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    auth_ctx: AuthContext = Depends(get_auth_context),
 ):
+    if (payload.tipo_tarjeta or "").lower() in ("sociedades", "sociedad", "society"):
+        auth_ctx.ensure_permission(PERMISSIONS.SOC_EMISION_MASIVA)
+    else:
+        auth_ctx.ensure_permission(PERMISSIONS.CONT_EMISION_MASIVA)
     from app.services.emision_engine_service import EmisionEngineService
     from app.repositories.tarjetas_repository import TarjetasRepository
     import os
@@ -516,7 +754,17 @@ async def emision_masiva(
             "resumen": resumen
         }
 
-@router.get("/emision-masiva/configuracion")
+@router.get(
+    "/emision-masiva/configuracion",
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.CONT_EMISION_MASIVA,
+                PERMISSIONS.SOC_EMISION_MASIVA,
+            )
+        )
+    ],
+)
 async def get_configuracion_colas():
     from app.config.queue_config import queue_config
     return {
@@ -524,7 +772,17 @@ async def get_configuracion_colas():
         "data": queue_config.to_dict()
     }
 
-@router.get("/emision-masiva/lote/{lote_id}")
+@router.get(
+    "/emision-masiva/lote/{lote_id}",
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.CONT_EMISION_MASIVA,
+                PERMISSIONS.SOC_EMISION_MASIVA,
+            )
+        )
+    ],
+)
 async def get_estado_lote(
     lote_id: int = Path(..., description="ID del lote"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
@@ -561,7 +819,10 @@ async def activar_tarjeta_movil(
         payload.client_id = client_id
     return await service.activar_tarjeta_movil(payload)
 
-@router.get("/reportes/dashboard")
+@router.get(
+    "/reportes/dashboard",
+    dependencies=[Depends(require_permission(PERMISSIONS.REP_DASHBOARD_GEN))],
+)
 async def get_reportes_dashboard(
     fecha_desde: Optional[str] = Query(None, description="Fecha inicial YYYY-MM-DD"),
     fecha_hasta: Optional[str] = Query(None, description="Fecha final YYYY-MM-DD"),
