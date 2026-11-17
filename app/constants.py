@@ -58,17 +58,6 @@ OTP_SIMULATION_MODE: bool = os.getenv("OTP_SIMULATION_MODE", "false").lower() in
 # =============================================================================
 CARD_SECURITY_SALT: str = "JCC_TARDIGITALES_SECURE_SALT_KEY_2026_NEXURA"
 
-# =============================================================================
-# AUTENTICACIÓN DE SESIÓN Y PERMISOS GRANULARES (NEXURA CORE AUTH)
-# =============================================================================
-AUTH_CORE_BASE_URL: str = os.getenv(
-    "AUTH_CORE_BASE_URL", "https://preproduccion9-jcc.nexura.com.co"
-).rstrip("/")
-AUTH_CLIENT_ID: int = int(os.getenv("AUTH_CLIENT_ID", "20060"))
-AUTH_MODULE_NAME: str = os.getenv("AUTH_MODULE_NAME", "TarjetasDigitales")
-AUTH_CACHE_TTL_SECONDS: int = int(os.getenv("AUTH_CACHE_TTL_SECONDS", "60"))
-
-
 
 
 

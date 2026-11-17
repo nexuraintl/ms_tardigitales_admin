@@ -1,20 +1,14 @@
-from fastapi import APIRouter, Depends, Query, Path, HTTPException, status, Response
+from fastapi import APIRouter, Query, Path, HTTPException, status, Response
 from typing import Optional
 from app.schemas.certificados import ProcesarCertificadoRequest, CertificadosListResponse, CertificadoItemResponse
 from app.services.certificados_service import CertificadosService
 from app.services.certificado_pdf_service import CertificadoPdfService
-from app.core.permissions import PERMISSIONS, require_permission
 
 router = APIRouter()
 certificados_service = CertificadosService()
 certificado_pdf_service = CertificadoPdfService()
 
-@router.get(
-    "",
-    response_model=CertificadosListResponse,
-    summary="Listar certificados unificados para el MFE",
-    dependencies=[Depends(require_permission(PERMISSIONS.CERT_LISTADO))],
-)
+@router.get("", response_model=CertificadosListResponse, summary="Listar certificados unificados para el MFE")
 async def listar_certificados(
     search: Optional[str] = Query(None, description="Término de búsqueda: certificado, NIT, documento o nombre"),
     tipo: Optional[str] = Query("todos", description="Filtro de titular: todos, contador, sociedad"),
@@ -29,23 +23,14 @@ async def listar_certificados(
     )
     return result
 
-@router.get(
-    "/{n_certificado}",
-    response_model=CertificadoItemResponse,
-    summary="Obtener detalle de un certificado",
-    dependencies=[Depends(require_permission(PERMISSIONS.CERT_DETALLE, PERMISSIONS.CERT_LISTADO))],
-)
+@router.get("/{n_certificado}", response_model=CertificadoItemResponse, summary="Obtener detalle de un certificado")
 async def obtener_detalle(n_certificado: str = Path(..., description="Número único de certificado")):
     cert = await certificados_service.obtener_por_numero(n_certificado)
     if not cert:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificado no encontrado")
     return cert
 
-@router.get(
-    "/{n_certificado}/pdf",
-    summary="Descargar PDF oficial del certificado",
-    dependencies=[Depends(require_permission(PERMISSIONS.CERT_DESCARGAR))],
-)
+@router.get("/{n_certificado}/pdf", summary="Descargar PDF oficial del certificado")
 async def descargar_pdf(n_certificado: str = Path(..., description="Número único de certificado")):
     cert = await certificados_service.obtener_por_numero(n_certificado)
     if not cert:
