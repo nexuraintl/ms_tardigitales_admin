@@ -1,0 +1,1931 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-4789-9012-jcc-ecosistema-completo",
+    "name": "JCC Tarjetas Digitales — Ecosistema Completo (Admin, Usuarios Finales y App Móvil)",
+    "description": "Colección oficial unificada de Postman para todo el ecosistema de Tarjetas Digitales de la UAE Junta Central de Contadores (JCC).\n\n### Estructura de Carpetas y Autenticación:\n1. **00 - Autenticación (Core Auth & Gateway):** Obtención automática de `{{bearer_token}}` y validación de sesión `{{nexura_sid}}`.\n2. **01 - Administración (`ms_tardigitales_admin` - `/apig/tardigitales/admin`):** Requiere `Authorization: Bearer {{bearer_token}}` + Cookie `nexuraSID={{nexura_sid}}` + Permisos RBAC.\n3. **02 - Usuarios Finales / Verificación QR (`ms_tardigitales_user` - `/apig/tardigitales/user`):** Requiere `Authorization: Bearer {{bearer_token}}` + `hash_sha256` del QR (Sin `nexuraSID`).\n4. **03 - Aplicación Móvil Wallet JCC (`ms_tardigitales_user` - `/apig/tardigitales/user`):** Requiere `Authorization: Bearer {{bearer_token}}` + Flujo 2FA OTP.\n5. **04 - Integración B2B MYJCC Certificados (`ms_tardigitales_user` - `/apig/tardigitales/user`):** Requiere `Authorization: Bearer {{bearer_token}}`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{bearer_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://preproduccion9-jcc.nexura.com.co",
+      "type": "string"
+    },
+    {
+      "key": "client_id",
+      "value": "20001",
+      "type": "string"
+    },
+    {
+      "key": "auth_client_id",
+      "value": "20060",
+      "type": "string"
+    },
+    {
+      "key": "bearer_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "nexura_sid",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "uid",
+      "value": "111",
+      "type": "string"
+    },
+    {
+      "key": "hash_tarjeta",
+      "value": "fb98bcc7ef3167edae16559c4d04b1ffe663735108db2bad5ff6c741b1ef6898",
+      "type": "string"
+    },
+    {
+      "key": "expediente",
+      "value": "375883",
+      "type": "string"
+    },
+    {
+      "key": "documento",
+      "value": "1002345678",
+      "type": "string"
+    },
+    {
+      "key": "tarjeta_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "n_certificado",
+      "value": "0221114451sa",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "00 - Autenticación (Core Auth & Gateway)",
+      "item": [
+        {
+          "name": "00.1 - Obtener Bearer Token (POST /apig/core/auth/token - App Móvil y MYJCC)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/core/auth/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "core",
+                "auth",
+                "token"
+              ],
+              "query": []
+            },
+            "description": "Autentica credenciales de servicio y guarda automáticamente el `access_token` en `{{bearer_token}}`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_id\": \"{{auth_client_id}}\",\n  \"user\": \"tu_usuario\",\n  \"password\": \"tu_password\"\n}"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.access_token) {",
+                  "    pm.collectionVariables.set('bearer_token', jsonData.access_token);",
+                  "    console.log('Bearer Token actualizado en {{bearer_token}}');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "00.2 - Obtener Bearer Token Gateway (GET /api/Usuarios/getTokenForGatewayUrl - MFEs)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/Usuarios/getTokenForGatewayUrl",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "Usuarios",
+                "getTokenForGatewayUrl"
+              ],
+              "query": []
+            },
+            "description": "Obtiene el Google ID Token desde el puente del portal y lo guarda en `{{bearer_token}}`."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data && jsonData.data.token) {",
+                  "    pm.collectionVariables.set('bearer_token', jsonData.data.token);",
+                  "    console.log('Bearer Token actualizado en {{bearer_token}}');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "00.3 - Validar Sesión Administrativa Redis (GET /apig/core/auth/session)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "nexuraSID={{nexura_sid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/core/auth/session",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "core",
+                "auth",
+                "session"
+              ],
+              "query": []
+            },
+            "description": "Verifica si la cookie `nexuraSID` está activa en Redis y retorna datos del usuario y módulos."
+          },
+          "response": []
+        },
+        {
+          "name": "00.4 - Consultar Permisos Granulares RBAC (GET /apig/core/auth/permissions)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "nexuraSID={{nexura_sid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/core/auth/permissions?client_id={{auth_client_id}}&uid={{uid}}&modulo=TarjetasDigitales",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "core",
+                "auth",
+                "permissions"
+              ],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{auth_client_id}}"
+                },
+                {
+                  "key": "uid",
+                  "value": "{{uid}}"
+                },
+                {
+                  "key": "modulo",
+                  "value": "TarjetasDigitales"
+                }
+              ]
+            },
+            "description": "Retorna la lista de los 47 permisos granulares asignados al usuario administrativo."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01 - Administración (ms_tardigitales_admin - Bearer + nexuraSID + RBAC)",
+      "item": [
+        {
+          "name": "1.1 - Gestión y Emisión de Tarjetas",
+          "item": [
+            {
+              "name": "Listar Tarjetas (Contadores / Sociedades)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/list?tipo_tarjeta=contadores&page=1&page_size=10&client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "list"
+                  ],
+                  "query": [
+                    {
+                      "key": "tipo_tarjeta",
+                      "value": "contadores"
+                    },
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "page_size",
+                      "value": "10"
+                    },
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `contListado` / `socListado`."
+              },
+              "response": []
+            },
+            {
+              "name": "Consultar Registro en MYJCC (Pre-emisión)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/consult-registry?documento={{documento}}&tipo_tarjeta=contadores&tipo=primeraVez&client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "consult-registry"
+                  ],
+                  "query": [
+                    {
+                      "key": "documento",
+                      "value": "{{documento}}"
+                    },
+                    {
+                      "key": "tipo_tarjeta",
+                      "value": "contadores"
+                    },
+                    {
+                      "key": "tipo",
+                      "value": "primeraVez"
+                    },
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `contNuevaTarjeta` / `socNuevaTarjeta` / `*Regenerar`."
+              },
+              "response": []
+            },
+            {
+              "name": "Obtener Detalle de Tarjeta por ID",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/get/{{tarjeta_id}}?tipo_tarjeta=contadores&client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "get",
+                    "{{tarjeta_id}}"
+                  ],
+                  "query": [
+                    {
+                      "key": "tipo_tarjeta",
+                      "value": "contadores"
+                    },
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `contDetalles` / `socDetalles`."
+              },
+              "response": []
+            },
+            {
+              "name": "Exportar PDF Oficial por ID (Admin)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/pdf/{{tarjeta_id}}?tipo_tarjeta=contadores&client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "pdf",
+                    "{{tarjeta_id}}"
+                  ],
+                  "query": [
+                    {
+                      "key": "tipo_tarjeta",
+                      "value": "contadores"
+                    },
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `contExportarTarjeta` / `socExportarTarjeta`."
+              },
+              "response": []
+            },
+            {
+              "name": "Descargar Constancia de Activación PDF por ID",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/{{tarjeta_id}}/constancia-activacion?tipo_tarjeta=contadores&client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "{{tarjeta_id}}",
+                    "constancia-activacion"
+                  ],
+                  "query": [
+                    {
+                      "key": "tipo_tarjeta",
+                      "value": "contadores"
+                    },
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `contExportarTarjeta` / `socExportarTarjeta`."
+              },
+              "response": []
+            },
+            {
+              "name": "Emitir / Regenerar Tarjeta Contador",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/contador/create?client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "contador",
+                    "create"
+                  ],
+                  "query": [
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `contNuevaTarjeta` / `contRegenerar`.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"documento\": \"{{documento}}\",\n  \"tipo\": \"primeraVez\"\n}"
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Emitir / Regenerar Tarjeta Sociedad",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/sociedad/create?client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "sociedad",
+                    "create"
+                  ],
+                  "query": [
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `socNuevaTarjeta` / `socRegenerar`.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"documento\": \"900123456\",\n  \"tipo\": \"primeraVez\"\n}"
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Consultar Historial de Estados de Tarjeta",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/historial/{{tarjeta_id}}?tipo=contador&client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "historial",
+                    "{{tarjeta_id}}"
+                  ],
+                  "query": [
+                    {
+                      "key": "tipo",
+                      "value": "contador"
+                    },
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `contHistorial` / `socHistorial`."
+              },
+              "response": []
+            },
+            {
+              "name": "Consultar Configuración de Columnas de Tabla",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/columns-config?tipo_tarjeta=contadores&client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "columns-config"
+                  ],
+                  "query": [
+                    {
+                      "key": "tipo_tarjeta",
+                      "value": "contadores"
+                    },
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "1.2 - Emisión Masiva y Lotes",
+          "item": [
+            {
+              "name": "Encolar Lote de Emisión Masiva",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/emision-masiva?client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "emision-masiva"
+                  ],
+                  "query": [
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `contEmisionMasiva` / `socEmisionMasiva`.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"identificaciones\": [\n    \"1002345678\",\n    \"1018412345\"\n  ],\n  \"tipo_tarjeta\": \"contadores\",\n  \"tipo_tramite\": \"primeraVez\",\n  \"archivo_nombre\": \"lote_contadores.csv\",\n  \"asincrono\": true\n}"
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Consultar Estado de Lote de Emisión",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/emision-masiva/lote/1?client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "emision-masiva",
+                    "lote",
+                    "1"
+                  ],
+                  "query": [
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "response": []
+            },
+            {
+              "name": "Ejecutar Emisión Recurrente Bajo Demanda",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/emision-recurrente/ejecutar?client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "emision-recurrente",
+                    "ejecutar"
+                  ],
+                  "query": [
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "1.3 - Validador QR (Parametrización Admin)",
+          "item": [
+            {
+              "name": "Obtener Switches del Validador QR (Admin)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/validador-qr/get-config?tipo_tarjeta=contadores&client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "validador-qr",
+                    "get-config"
+                  ],
+                  "query": [
+                    {
+                      "key": "tipo_tarjeta",
+                      "value": "contadores"
+                    },
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `valQrContadores` / `valQrSociedades`."
+              },
+              "response": []
+            },
+            {
+              "name": "Actualizar Switches del Validador QR (Admin)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/validador-qr/update-config?tipo_tarjeta=contadores&client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "validador-qr",
+                    "update-config"
+                  ],
+                  "query": [
+                    {
+                      "key": "tipo_tarjeta",
+                      "value": "contadores"
+                    },
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `valQrContadores` / `valQrSociedades`.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"val_tarjeta_profesional\": true,\n  \"val_fecha_resolucion\": true,\n  \"val_resolucion\": true,\n  \"val_nombre\": true,\n  \"val_cedula\": true,\n  \"val_institucion\": true,\n  \"val_expediente\": true,\n  \"val_estado\": true,\n  \"val_codigo_tarjeta\": true,\n  \"val_foto\": true\n}"
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "1.4 - Branding de Credenciales y Firma Institucional (Admin)",
+          "item": [
+            {
+              "name": "Consultar Branding Publicado en Admin (1=Contadores, 2=Sociedades)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/branding-credentials/info-published/1?client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "branding-credentials",
+                    "info-published",
+                    "1"
+                  ],
+                  "query": [
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "response": []
+            },
+            {
+              "name": "Historial de Versiones de Branding Credenciales",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/branding-credentials/list-history-versions/1?page=1&page_size=10&client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "branding-credentials",
+                    "list-history-versions",
+                    "1"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "page_size",
+                      "value": "10"
+                    },
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "response": []
+            },
+            {
+              "name": "Publicar Versión de Branding Credenciales",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/branding-credentials/update/change-version/1?client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "branding-credentials",
+                    "update",
+                    "change-version",
+                    "1"
+                  ],
+                  "query": [
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"version_publicada\": 1,\n  \"usuario_modificacion_id\": 111\n}"
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Consultar Firma Institucional Publicada (Admin)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/branding-institucional/info-published?client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "branding-institucional",
+                    "info-published"
+                  ],
+                  "query": [
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "response": []
+            },
+            {
+              "name": "Historial de Versiones Firma Institucional",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/branding-institucional/list-history-versions?client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "branding-institucional",
+                    "list-history-versions"
+                  ],
+                  "query": [
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "1.5 - Reportes, Auditoría API, Notificaciones, Certificados y Colas",
+          "item": [
+            {
+              "name": "Dashboard General de Reportes",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/reportes/dashboard?segmento=all&tipo_reporte=general&client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "reportes",
+                    "dashboard"
+                  ],
+                  "query": [
+                    {
+                      "key": "segmento",
+                      "value": "all"
+                    },
+                    {
+                      "key": "tipo_reporte",
+                      "value": "general"
+                    },
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `repDashboardGen`."
+              },
+              "response": []
+            },
+            {
+              "name": "Listar Auditoría de Integración API MYJCC",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/tarjetas/auditoria-api/list?page=1&page_size=10&client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "tarjetas",
+                    "auditoria-api",
+                    "list"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "page_size",
+                      "value": "10"
+                    },
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `auditoriaApiReg`."
+              },
+              "response": []
+            },
+            {
+              "name": "Listar Historial de Notificaciones",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/notificaciones/list?client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "notificaciones",
+                    "list"
+                  ],
+                  "query": [
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `notifHistorial` / `repNotificaciones`."
+              },
+              "response": []
+            },
+            {
+              "name": "Crear y Enviar Notificación",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/notificaciones/create?client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "notificaciones",
+                    "create"
+                  ],
+                  "query": [
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `notifNueva`.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"titulo\": \"Actualización de Credencial Digital\",\n  \"mensaje\": \"Recuerde mantener actualizada su tarjeta digital en el Wallet JCC.\",\n  \"canal\": \"Push\",\n  \"audiencia\": \"Contadores\",\n  \"tipo_envio\": \"inmediato\"\n}"
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Listar Certificados Emitidos (Admin)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/certificados?page=1&page_size=20",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "certificados"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "page_size",
+                      "value": "20"
+                    }
+                  ]
+                },
+                "description": "Permiso requerido: `certListado`."
+              },
+              "response": []
+            },
+            {
+              "name": "Descargar PDF de Certificado por Número (Admin)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/certificados/{{n_certificado}}/pdf",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "certificados",
+                    "{{n_certificado}}",
+                    "pdf"
+                  ],
+                  "query": []
+                },
+                "description": "Permiso requerido: `certDescargar`."
+              },
+              "response": []
+            },
+            {
+              "name": "Consultar Métricas de Colas y Workers",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Cookie",
+                    "value": "nexuraSID={{nexura_sid}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/apig/tardigitales/admin/colas/metricas?client_id={{client_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "apig",
+                    "tardigitales",
+                    "admin",
+                    "colas",
+                    "metricas"
+                  ],
+                  "query": [
+                    {
+                      "key": "client_id",
+                      "value": "{{client_id}}"
+                    }
+                  ]
+                },
+                "description": ""
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 - Usuarios Finales / Verificación QR (ms_tardigitales_user - Bearer Gateway + Hash QR, Sin nexuraSID)",
+      "item": [
+        {
+          "name": "02.1 - Verificar Tarjeta por Query Param Token (Sanitizada)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/user/tarjetas/verificar?token={{hash_tarjeta}}&client_id={{client_id}}&sanitizar=true",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "tardigitales",
+                "user",
+                "tarjetas",
+                "verificar"
+              ],
+              "query": [
+                {
+                  "key": "token",
+                  "value": "{{hash_tarjeta}}"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                },
+                {
+                  "key": "sanitizar",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Consumido por `mfe_tardigitales_user` al escanear un QR en navegador. Exige `Bearer Token` de pasarela + `hash_sha256` (sin `nexuraSID`)."
+          },
+          "response": []
+        },
+        {
+          "name": "02.2 - Verificar Tarjeta por Path Hash",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/user/tarjetas/verificar/{{hash_tarjeta}}?client_id={{client_id}}&sanitizar=true",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "tardigitales",
+                "user",
+                "tarjetas",
+                "verificar",
+                "{{hash_tarjeta}}"
+              ],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                },
+                {
+                  "key": "sanitizar",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Variante por path param `/verificar/{hash}`."
+          },
+          "response": []
+        },
+        {
+          "name": "02.3 - Consultar Switches de Visibilidad del Validador QR",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/user/tarjetas/validador-qr/get-config?tipo_tarjeta=contadores&client_id={{client_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "tardigitales",
+                "user",
+                "tarjetas",
+                "validador-qr",
+                "get-config"
+              ],
+              "query": [
+                {
+                  "key": "tipo_tarjeta",
+                  "value": "contadores"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                }
+              ]
+            },
+            "description": "Retorna los campos autorizados para visualizarse públicamente en la tarjeta."
+          },
+          "response": []
+        },
+        {
+          "name": "02.4 - Consultar Diseño Oficial Publicado (1=Contadores, 2=Sociedades)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/user/tarjetas/branding-credentials/info-published/1?client_id={{client_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "tardigitales",
+                "user",
+                "tarjetas",
+                "branding-credentials",
+                "info-published",
+                "1"
+              ],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                }
+              ]
+            },
+            "description": "Retorna colores, logo SVG y patrón Base64 publicados para renderizar la credencial."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 - Aplicación Móvil Wallet JCC (ms_tardigitales_user - Bearer Token + 2FA OTP)",
+      "item": [
+        {
+          "name": "03.1 - Solicitar Código OTP (Factor 1: Hash QR + Expediente)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/user/tarjetas/otp/solicitar",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "tardigitales",
+                "user",
+                "tarjetas",
+                "otp",
+                "solicitar"
+              ],
+              "query": []
+            },
+            "description": "Valida que el hash del QR y el expediente pertenezcan al mismo titular y envía el OTP de 6 dígitos al correo oficial.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hash\": \"{{hash_tarjeta}}\",\n  \"expediente\": \"{{expediente}}\",\n  \"client_id\": 20001\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "03.2 - Validar Código OTP (Factor 2: Código de 6 dígitos)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/user/tarjetas/otp/validar",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "tardigitales",
+                "user",
+                "tarjetas",
+                "otp",
+                "validar"
+              ],
+              "query": []
+            },
+            "description": "Verifica el código OTP de 6 dígitos ingresado en la App Móvil.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hash\": \"{{hash_tarjeta}}\",\n  \"token\": \"123456\",\n  \"expediente\": \"{{expediente}}\",\n  \"client_id\": 20001\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "03.3 - Activar Tarjeta y Enrolar Dispositivo Móvil",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/user/tarjetas/activar-movil",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "tardigitales",
+                "user",
+                "tarjetas",
+                "activar-movil"
+              ],
+              "query": []
+            },
+            "description": "Enrola el dispositivo móvil, activa la tarjeta y envía constancia PDF de activación por correo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{hash_tarjeta}}\",\n  \"fcm_token\": \"fN4-kJq_T9W:APA91bH7_sample_token\",\n  \"device_id\": \"c83b8b98-11da-45d2-bce4-6f0ad7295ef1\",\n  \"device_os\": \"android\",\n  \"device_modelo\": \"Samsung Galaxy S24\",\n  \"app_version\": \"1.0.0\",\n  \"client_id\": 20001\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "03.4 - Exportar / Compartir PDF Oficial por Hash desde App Móvil",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/user/tarjetas/verificar/{{hash_tarjeta}}/pdf?client_id={{client_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "tardigitales",
+                "user",
+                "tarjetas",
+                "verificar",
+                "{{hash_tarjeta}}",
+                "pdf"
+              ],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                }
+              ]
+            },
+            "description": "Descarga el PDF/A-2b oficial de la tarjeta usando su hash SHA-256."
+          },
+          "response": []
+        },
+        {
+          "name": "03.5 - Consultar Firma Institucional Publicada (Director General)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/user/tarjetas/branding-institucional/info-published?client_id={{client_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "tardigitales",
+                "user",
+                "tarjetas",
+                "branding-institucional",
+                "info-published"
+              ],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                }
+              ]
+            },
+            "description": "Retorna nombre, cargo y firma PNG transparente del Director General para la App Móvil."
+          },
+          "response": []
+        },
+        {
+          "name": "03.6 - Registrar Lectura de QR Dinámico desde App Móvil",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/user/tarjetas/lecturas/registrar",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "tardigitales",
+                "user",
+                "tarjetas",
+                "lecturas",
+                "registrar"
+              ],
+              "query": []
+            },
+            "description": "Registra en el historial de auditoría el escaneo de un QR realizado desde la App Móvil.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hash\": \"{{hash_tarjeta}}\",\n  \"documento_lector\": \"{{documento}}\",\n  \"origen\": \"Dispositivo móvil\",\n  \"client_id\": 20001\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "03.7 - Consultar Historial de Lecturas QR (me_consultaron / mis_consultas)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/user/tarjetas/lecturas/historial?documento={{documento}}&filtro=me_consultaron&limit=20&offset=0&client_id={{client_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "tardigitales",
+                "user",
+                "tarjetas",
+                "lecturas",
+                "historial"
+              ],
+              "query": [
+                {
+                  "key": "documento",
+                  "value": "{{documento}}"
+                },
+                {
+                  "key": "filtro",
+                  "value": "me_consultaron"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                }
+              ]
+            },
+            "description": "Consulta quién ha escaneado la tarjeta del titular (`me_consultaron`) o sus lecturas realizadas (`mis_consultas`)."
+          },
+          "response": []
+        },
+        {
+          "name": "03.8 - Consultar Novedades / Noticias para la App Móvil",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/user/tarjetas/novedades?client_id={{client_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "tardigitales",
+                "user",
+                "tarjetas",
+                "novedades"
+              ],
+              "query": [
+                {
+                  "key": "client_id",
+                  "value": "{{client_id}}"
+                }
+              ]
+            },
+            "description": "Retorna el feed de noticias configurado en el bloque dinámico del CMS nx9."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 - Integración B2B MYJCC Certificados (ms_tardigitales_user - Bearer Token)",
+      "item": [
+        {
+          "name": "04.1 - Procesar y Generar Certificado Contador (Primera Emisión)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/pdf"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/user/certificados/procesar",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "tardigitales",
+                "user",
+                "certificados",
+                "procesar"
+              ],
+              "query": []
+            },
+            "description": "Recibe la petición autenticada con Bearer Token desde MYJCC, persiste el certificado en BD y devuelve el PDF binario.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Nuevo\": true,\n  \"fechaGeneracion\": \"2026-10-15\",\n  \"tipo\": \"contador\",\n  \"documento\": \"1000000000\",\n  \"N_CERTIFICADO\": \"{{n_certificado}}\",\n  \"historia\": \"5\",\n  \"dirigido\": \"A QUIEN INTERESE\",\n  \"Detalles\": {\n    \"CON_CODIGO\": 100001,\n    \"CON_NOMBRES\": \"CARLOS ANDRES\",\n    \"CON_APELLIDO1\": \"PEREZ\",\n    \"CON_APELLIDO2\": \"GOMEZ\",\n    \"TDOC_CODIGO\": \"CC\",\n    \"CON_NRO_DOCUMENTO\": 1000000000,\n    \"MUNICIPIO_DOCUMENTO\": \"BOGOTA D.C.\",\n    \"DEPARTAMENTO_DOCUMENTO\": \"BOGOTA D.C.\",\n    \"CON_NRO_TARJETA\": 123456,\n    \"CON_TIPO_TARJETA\": \"T\",\n    \"CON_SEXO\": \"M\",\n    \"ESTADO\": \"ACTIVO\",\n    \"CON_FECHA_ACTUALIZACION\": \"2026-10-15 08:30:00\",\n    \"EMAIL\": \"carlos.perez@ejemplo.com\",\n    \"ANTECEDENTES\": []\n  }\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "04.2 - Procesar y Generar Certificado Sociedad (Con Antecedentes)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/pdf"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/apig/tardigitales/user/certificados/procesar",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "apig",
+                "tardigitales",
+                "user",
+                "certificados",
+                "procesar"
+              ],
+              "query": []
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Nuevo\": true,\n  \"fechaGeneracion\": \"2026-10-15\",\n  \"tipo\": \"sociedad\",\n  \"documento\": \"900123456\",\n  \"N_CERTIFICADO\": \"CERT-SOC-2026-00102\",\n  \"historia\": \"5\",\n  \"dirigido\": \"A QUIEN INTERESE\",\n  \"Detalles\": {\n    \"SOC_RAZON_SOCIAL\": \"AUDITORES Y ASESORES CONTABLES S.A.S.\",\n    \"SOC_CODIGO\": \"SOC-90012\",\n    \"SOC_REPRESENTANTE_LEGAL\": \"MARIA FERNANDA LOPEZ\",\n    \"SOC_TIPO_DOCUMENTO_REP\": \"CC\",\n    \"SOC_DOCUMENTO_REP\": \"52987654\",\n    \"MUNICIPIO\": \"MEDELLIN\",\n    \"DEPARTAMENTO\": \"ANTIOQUIA\",\n    \"ESTADO\": \"ACTIVO\",\n    \"EMAIL\": \"contacto@auditoresasesores.com\",\n    \"ANTECEDENTES\": [\n      {\n        \"SAN_TIPO\": \"SUSPENSION\",\n        \"SAN_MESES\": 12,\n        \"SAN_RESOLUCION\": \"RES-2024-089\",\n        \"SAN_FECHA_RESOLUCION\": \"2024-03-10\",\n        \"SAN_FECHA_EJECUTORIA\": \"2024-04-01\",\n        \"SAN_FECHA_FIN\": \"2025-04-01\"\n      }\n    ]\n  }\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
