@@ -449,7 +449,7 @@ class PdfGeneratorService:
         raw_base = str(tarjeta.get("base_url") or "https://preproduccion9.jcc.nexura.com.co").strip()
         m_origin = re.match(r"^(https?://[^/]+)", raw_base)
         base_url = m_origin.group(1) if m_origin else "https://preproduccion9.jcc.nexura.com.co"
-        qr_url = f"{base_url}/admin/tardigitales/verificar?token={token_verif}"
+        qr_url = f"{base_url}/tarjetas-digitales/verificar?token={token_verif}"
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_M,

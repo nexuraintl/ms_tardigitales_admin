@@ -1,14 +1,20 @@
-from fastapi import APIRouter, Query, Path, HTTPException, status, Response
+from fastapi import APIRouter, Depends, Query, Path, HTTPException, status, Response
 from typing import Optional
 from app.schemas.certificados import ProcesarCertificadoRequest, CertificadosListResponse, CertificadoItemResponse
 from app.services.certificados_service import CertificadosService
 from app.services.certificado_pdf_service import CertificadoPdfService
+from app.core.permissions import PERMISSIONS, require_permission
 
 router = APIRouter()
 certificados_service = CertificadosService()
 certificado_pdf_service = CertificadoPdfService()
 
-@router.get("", response_model=CertificadosListResponse, summary="Listar certificados unificados para el MFE")
+@router.get(
+    "",
+    response_model=CertificadosListResponse,
+    summary="Listar certificados unificados para el MFE",
+    dependencies=[Depends(require_permission(PERMISSIONS.CERT_LISTADO))],
+)
 async def listar_certificados(
     search: Optional[str] = Query(None, description="Término de búsqueda: certificado, NIT, documento o nombre"),
     tipo: Optional[str] = Query("todos", description="Filtro de titular: todos, contador, sociedad"),
@@ -23,14 +29,23 @@ async def listar_certificados(
     )
     return result
 
-@router.get("/{n_certificado}", response_model=CertificadoItemResponse, summary="Obtener detalle de un certificado")
+@router.get(
+    "/{n_certificado}",
+    response_model=CertificadoItemResponse,
+    summary="Obtener detalle de un certificado",
+    dependencies=[Depends(require_permission(PERMISSIONS.CERT_DETALLE, PERMISSIONS.CERT_LISTADO))],
+)
 async def obtener_detalle(n_certificado: str = Path(..., description="Número único de certificado")):
     cert = await certificados_service.obtener_por_numero(n_certificado)
     if not cert:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificado no encontrado")
     return cert
 
-@router.get("/{n_certificado}/pdf", summary="Descargar PDF oficial del certificado")
+@router.get(
+    "/{n_certificado}/pdf",
+    summary="Descargar PDF oficial del certificado",
+    dependencies=[Depends(require_permission(PERMISSIONS.CERT_DESCARGAR))],
+)
 async def descargar_pdf(n_certificado: str = Path(..., description="Número único de certificado")):
     cert = await certificados_service.obtener_por_numero(n_certificado)
     if not cert:
@@ -55,19 +70,3 @@ async def descargar_pdf(n_certificado: str = Path(..., description="Número úni
         }
     )
 
-# Endpoint oficial de integración MyJCC
-@router.post("/procesar", summary="Recepción y procesamiento de certificados desde MyJCC")
-async def procesar_certificado(req: ProcesarCertificadoRequest):
-    data = req.dict()
-    guardado = await certificados_service.procesar_solicitud_myjcc(data)
-    pdf_bytes = guardado.get("pdf_bytes") or certificado_pdf_service.generar_pdf(data)
-    
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'attachment; filename="certificado-{req.N_CERTIFICADO}.pdf"',
-            "X-Numero-Certificado": req.N_CERTIFICADO,
-            "X-Origen-Documento": guardado.get("origen", "GENERADO")
-        }
-    )

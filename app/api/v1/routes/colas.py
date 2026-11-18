@@ -1,6 +1,6 @@
 import os
 from typing import Optional, Dict, Any
-from fastapi import APIRouter, Query, Path, Body, HTTPException
+from fastapi import APIRouter, Depends, Query, Path, Body, HTTPException
 
 from datetime import datetime, timedelta
 from app.repositories.tarjetas_repository import TarjetasRepository
@@ -8,8 +8,13 @@ from app.services.scheduler_service import scheduler_service
 from app.services.queue_worker_service import queue_worker
 from app.config.queue_config import queue_config
 from app.constants import DEFAULT_CLIENT_ID
+from app.core.permissions import get_auth_context
 
-router = APIRouter(prefix="/colas", tags=["Admin - Colas y Procesos"])
+router = APIRouter(
+    prefix="/colas",
+    tags=["Admin - Colas y Procesos"],
+    dependencies=[Depends(get_auth_context)],
+)
 repo = TarjetasRepository()
 
 # -----------------------------------------------------------------------------

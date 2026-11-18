@@ -1,13 +1,25 @@
-from fastapi import APIRouter, Query, Path, Body, status
+from fastapi import APIRouter, Depends, Query, Path, Body, status
 from typing import List, Dict, Any, Optional
 from app.services.notificaciones_service import NotificacionesService
 from app.schemas.notificaciones_schema import NotificacionCreateSchema
 from app.constants import DEFAULT_CLIENT_ID
+from app.core.permissions import PERMISSIONS, require_permission
 
 router = APIRouter()
 service = NotificacionesService()
 
-@router.get("/list", response_model=List[Dict[str, Any]])
+@router.get(
+    "/list",
+    response_model=List[Dict[str, Any]],
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.NOTIF_HISTORIAL,
+                PERMISSIONS.REP_NOTIFICACIONES,
+            )
+        )
+    ],
+)
 async def list_notificaciones(
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
     canal: Optional[str] = Query(None, description="Filtrar por canal: Push, Alerta estándar, Notificación interna"),
@@ -31,7 +43,11 @@ async def list_notificaciones(
         offset=offset
     )
 
-@router.post("/create", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/create",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission(PERMISSIONS.NOTIF_NUEVA))],
+)
 async def create_notificacion(
     payload: NotificacionCreateSchema = Body(..., description="Datos de la notificación a crear"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
@@ -43,7 +59,17 @@ async def create_notificacion(
     cid = client_id or payload.client_id or DEFAULT_CLIENT_ID
     return await service.create_notificacion(payload, cid)
 
-@router.get("/{id}")
+@router.get(
+    "/{id}",
+    dependencies=[
+        Depends(
+            require_permission(
+                PERMISSIONS.NOTIF_HISTORIAL,
+                PERMISSIONS.REP_NOTIFICACIONES,
+            )
+        )
+    ],
+)
 async def get_notificacion_detalle(
     id: int = Path(..., description="ID único de la notificación"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
