@@ -153,42 +153,6 @@ async def get_tarjeta(
     return await service.get_tarjeta(id, tipo_tarjeta, client_id)
 
 
-@router.get("/get-by-hash/{hash}")
-@router.get("/verificar/{hash}")
-async def get_tarjeta_by_hash(
-    request: Request,
-    hash: str = Path(..., min_length=10, max_length=64, description="Hash SHA-256 canónico de la tarjeta"),
-    tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
-    sanitizar: bool = Query(False, description="Si es True, aplica los filtros de visibilidad del validador QR (por defecto False para App Movil e integraciones)"),
-):
-    ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
-    if ip and "," in ip:
-        ip = ip.split(",")[0].strip()
-    return await service.get_tarjeta_by_hash(hash, tipo_tarjeta, client_id, sanitizar=sanitizar, ip=ip, auto_log=True)
-
-
-@router.get("/verificar")
-async def verificar_tarjeta_query(
-    request: Request,
-    token: Optional[str] = Query(None, description="Token / Hash SHA-256 de la tarjeta"),
-    hash: Optional[str] = Query(None, description="Hash SHA-256 alternativo de la tarjeta"),
-    tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
-    sanitizar: bool = Query(False, description="Si es True, aplica los filtros de visibilidad del validador QR (por defecto False para App Movil e integraciones)"),
-):
-    target_hash = token or hash
-    if not target_hash:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Debe suministrar el parámetro 'token' o 'hash' de la tarjeta a verificar."
-        )
-    ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
-    if ip and "," in ip:
-        ip = ip.split(",")[0].strip()
-    return await service.get_tarjeta_by_hash(target_hash, tipo_tarjeta, client_id, sanitizar=sanitizar, ip=ip, auto_log=True)
-
-
 @router.get(
     "/pdf/{id}",
     dependencies=[
@@ -285,30 +249,6 @@ async def export_constancia_activacion_pdf(
 
 
 
-@router.get("/verificar/{hash}/pdf")
-@router.get("/get-by-hash/{hash}/pdf")
-async def export_tarjeta_pdf_by_hash(
-    request: Request,
-    hash: str = Path(..., min_length=10, max_length=64, description="Hash SHA-256 canónico de la tarjeta"),
-    tipo_tarjeta: Optional[str] = Query(None, description="Filtrar por 'contadores' o 'sociedades'"),
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
-    base_url: Optional[str] = Query(None, description="URL base del portal frontend para el código QR"),
-    download: bool = Query(True, description="Si es True fuerza la descarga como attachment")
-):
-    pdf_bytes, filename = await service.generar_pdf_tarjeta_by_hash(hash, tipo_tarjeta, client_id, base_url=base_url or request.headers.get("origin") or request.headers.get("referer"))
-    disposition = "attachment" if download else "inline"
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'{disposition}; filename="{filename}"',
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0"
-        }
-    )
-
-
 @router.post(
     "/create",
     dependencies=[
@@ -354,8 +294,13 @@ async def get_historial(
 @router.get("/validador-qr/get-config")
 async def get_validador_config(
     tipo_tarjeta: str = Query("contadores", description="Tipo de tarjeta ('contadores' o 'sociedades')"),
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    auth_ctx: AuthContext = Depends(get_auth_context),
 ):
+    if str(tipo_tarjeta).lower() in ("sociedades", "sociedad", "society"):
+        auth_ctx.ensure_permission(PERMISSIONS.VAL_QR_SOCIEDADES)
+    else:
+        auth_ctx.ensure_permission(PERMISSIONS.VAL_QR_CONTADORES)
     return await service.get_validador_config(tipo_tarjeta, client_id)
 
 @router.post("/validador-qr/update-config")
@@ -464,15 +409,21 @@ async def update_branding_credentials(
 ):
     return await service.update_branding_credentials_change_version(id, data, client_id)
 
-@router.get("/branding-credentials/info/{id}")
+@router.get(
+    "/branding-credentials/info/{id}",
+    dependencies=[Depends(get_auth_context)],
+)
 async def get_branding_credentials(
     id: int = Path(..., description="ID único del Branding credentials"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
 ):
     return await service.get_branding_credentials(id, client_id)
 
-@router.get("/branding-credentials/info-published/{id}")
-async def get_branding_credentials(
+@router.get(
+    "/branding-credentials/info-published/{id}",
+    dependencies=[Depends(get_auth_context)],
+)
+async def get_branding_credentials_published(
     id: int = Path(..., description="ID único del Branding credentials"),
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
 ):
@@ -495,8 +446,14 @@ async def list_history_branding_credentials(
 # =============================================================================
 # BRANDING INSTITUCIONAL (GLOBAL - DIRECTOR GENERAL Y FIRMA OFICIAL)
 # =============================================================================
-@router.get("/branding-credentials/institucional/info-published")
-@router.get("/branding-institucional/info-published")
+@router.get(
+    "/branding-credentials/institucional/info-published",
+    dependencies=[Depends(get_auth_context)],
+)
+@router.get(
+    "/branding-institucional/info-published",
+    dependencies=[Depends(get_auth_context)],
+)
 async def get_institucional_published(
     client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
 ):
@@ -802,23 +759,6 @@ async def get_estado_lote(
     }
 
 
-@router.post("/activar-movil", status_code=status.HTTP_200_OK)
-async def activar_tarjeta_movil(
-    payload: ActivacionMovilRequestSchema = Body(..., description="Parámetros de activación móvil desde el Wallet JCC"),
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
-):
-    """
-    HU-JCC-014: Activación móvil de credencial digital desde la App Móvil / Wallet.
-    - Valida el hash SHA-256 de la tarjeta.
-    - Cambia el estado de 'Emitida' a 'Activa'.
-    - Registra el dispositivo y token FCM en la tabla satélite tn_tarjetavirtual_dispositivos.
-    - Registra la trazabilidad en el historial.
-    - Retorna los datos de la credencial y branding para renderizado en la App Móvil.
-    """
-    if client_id and not payload.client_id:
-        payload.client_id = client_id
-    return await service.activar_tarjeta_movil(payload)
-
 @router.get(
     "/reportes/dashboard",
     dependencies=[Depends(require_permission(PERMISSIONS.REP_DASHBOARD_GEN))],
@@ -840,62 +780,4 @@ async def get_reportes_dashboard(
         client_id=client_id
     )
 
-
-@router.post("/lecturas/registrar", status_code=status.HTTP_201_CREATED)
-async def registrar_lectura(
-    request: Request,
-    payload: RegistroLecturaRequestSchema = Body(..., description="Datos del evento de lectura QR"),
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente (opcional)")
-):
-    """
-    Registra un evento de lectura QR (HU: Gestión de Registro y Consulta de Auditoría).
-    - Clasifica automáticamente el origen: 'Dispositivo móvil' (QR dinámico 17:34) vs 'Navegador web' (QR estático 17:39).
-    - Almacena en tn_tarjetavirtual_lecturas_historial.
-    """
-    if client_id and not payload.client_id:
-        payload.client_id = client_id
-    ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
-    if ip and "," in ip:
-        ip = ip.split(",")[0].strip()
-    return await service.registrar_lectura(payload, ip=ip)
-
-
-@router.get("/lecturas/historial")
-async def get_historial_lecturas(
-    documento: str = Query(..., min_length=3, description="Cédula o NIT del usuario"),
-    filtro: str = Query("me_consultaron", pattern="^(me_consultaron|mis_consultas)$", description="Filtro de consulta: 'me_consultaron' o 'mis_consultas'"),
-    limit: int = Query(20, ge=1, le=100, description="Cantidad máxima de registros a retornar"),
-    offset: int = Query(0, ge=0, description="Desplazamiento para paginación"),
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
-):
-    """
-    Consulta el historial de lecturas QR según número de identificación del usuario (App Móvil 14:09).
-    - 'me_consultaron': Quién ha visto el perfil del usuario.
-    - 'mis_consultas': Lo que el usuario autenticado ha consultado a otros.
-    """
-    return await service.get_historial_lecturas(
-        documento=documento,
-        filtro=filtro,
-        limit=limit,
-        offset=offset,
-        client_id=client_id
-    )
-
-
-@router.get("/novedades", status_code=status.HTTP_200_OK, tags=["App Móvil - Novedades"])
-async def get_novedades(
-    client_id: Optional[int] = Query(None, description="ID de la entidad cliente (ej: 20001)")
-):
-    """
-    Retorna el listado de novedades (noticias, comunicados) para la aplicación móvil,
-    obtenidas dinámicamente desde el bloque dinámico configurado en el CMS nx9.
-    """
-    result = await service.obtener_novedades(client_id=client_id)
-    if result.get("status") == "error":
-        status_code = result.get("code", status.HTTP_500_INTERNAL_SERVER_ERROR)
-        raise HTTPException(
-            status_code=status_code,
-            detail=result.get("message", "Error al obtener las novedades desde el CMS nx9.")
-        )
-    return result
 

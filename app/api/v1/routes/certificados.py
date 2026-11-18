@@ -70,19 +70,3 @@ async def descargar_pdf(n_certificado: str = Path(..., description="Número úni
         }
     )
 
-# Endpoint oficial de integración MyJCC
-@router.post("/procesar", summary="Recepción y procesamiento de certificados desde MyJCC")
-async def procesar_certificado(req: ProcesarCertificadoRequest):
-    data = req.dict()
-    guardado = await certificados_service.procesar_solicitud_myjcc(data)
-    pdf_bytes = guardado.get("pdf_bytes") or certificado_pdf_service.generar_pdf(data)
-    
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'attachment; filename="certificado-{req.N_CERTIFICADO}.pdf"',
-            "X-Numero-Certificado": req.N_CERTIFICADO,
-            "X-Origen-Documento": guardado.get("origen", "GENERADO")
-        }
-    )
