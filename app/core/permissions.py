@@ -228,13 +228,22 @@ def _is_local_unmounted_request(request: Request, nexura_sid: Optional[str]) -> 
     return False
 
 
+def _extract_gateway_auth(request: Request) -> str:
+    """Prioriza X-Forwarded-Authorization (GCP API Gateway) sobre Authorization."""
+    return (
+        request.headers.get("x-forwarded-authorization")
+        or request.headers.get("authorization")
+        or ""
+    ).strip()
+
+
 async def get_auth_context(request: Request) -> AuthContext:
     """
     Dependencia principal de FastAPI que valida la sesión en `/apig/core/auth/session`
     y obtiene los permisos granulares desde `/apig/core/auth/permissions`.
     """
     nexura_sid = _extract_nexura_sid(request)
-    auth_header = request.headers.get("authorization") or ""
+    auth_header = _extract_gateway_auth(request)
 
     if _is_local_unmounted_request(request, nexura_sid):
         return AuthContext(
@@ -270,6 +279,7 @@ async def get_auth_context(request: Request) -> AuthContext:
         async with httpx.AsyncClient(verify=False, timeout=10.0) as client:
             session_resp = await client.get(session_url, headers=headers)
             if session_resp.status_code in (401, 403):
+                print(f"[AuthSecurity] /session rechazado ({session_resp.status_code}): {session_resp.text[:300]}")
                 raise PipelineException(
                     etapa="SESION_NO_AUTENTICADA",
                     mensaje="La sesión administrativa ha expirado o no es válida.",
@@ -316,6 +326,8 @@ async def get_auth_context(request: Request) -> AuthContext:
                 perms_json = perms_resp.json()
                 if isinstance(perms_json.get("permissions"), list):
                     perms_list = [str(p) for p in perms_json["permissions"]]
+            else:
+                print(f"[AuthSecurity] /permissions error ({perms_resp.status_code}): {perms_resp.text[:300]}")
 
             ctx = AuthContext(
                 authenticated=True,
