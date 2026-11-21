@@ -164,6 +164,13 @@ async def startup_event():
     try:
         cid = int(os.getenv("CLIENT_ID")) if os.getenv("CLIENT_ID") and os.getenv("CLIENT_ID").isdigit() else DEFAULT_CLIENT_ID
         repo = TarjetasRepository()
+        try:
+            await repo.ensure_new_requirements_schema(cid)
+            auth_cid = int(os.getenv("AUTH_CLIENT_ID", "20060"))
+            if auth_cid and auth_cid != cid:
+                await repo.ensure_new_requirements_schema(auth_cid)
+        except Exception as e_schema:
+            print(f"[Schema] Advertencia en migración de esquema de nuevos requerimientos: {e_schema}")
         config_db = await repo.get_queue_config(cid)
         if config_db:
             queue_config.load_from_db(config_db)

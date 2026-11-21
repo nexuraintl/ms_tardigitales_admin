@@ -53,6 +53,7 @@ async def list_tarjetas(
     estado_contador: Optional[str] = Query(None, description="Estado del contador"),
     estado_sociedad: Optional[str] = Query(None, description="Estado de la sociedad"),
     tipo_asociado: Optional[str] = Query(None, description="Tipo de trámite / asociado"),
+    version_firma: Optional[str] = Query(None, description="Versión de firma institucional"),
     auth_ctx: AuthContext = Depends(get_auth_context),
 ):
     if (tipo_tarjeta or "").lower() in ("sociedades", "sociedad", "society"):
@@ -91,7 +92,8 @@ async def list_tarjetas(
         "estado_tarjeta": estado_tarjeta,
         "estado_contador": estado_contador,
         "estado_sociedad": estado_sociedad,
-        "tipo_asociado": tipo_asociado
+        "tipo_asociado": tipo_asociado,
+        "version_firma": version_firma
     }
     
     return await service.list_tarjetas(
@@ -459,6 +461,65 @@ async def get_institucional_published(
 ):
     return await service.get_institucional_published(client_id)
 
+
+@router.get(
+    "/branding-credentials/institucional/version/{version}",
+    dependencies=[Depends(get_auth_context)],
+)
+@router.get(
+    "/branding-institucional/version/{version}",
+    dependencies=[Depends(get_auth_context)],
+)
+@router.get(
+    "/firma-institucional/{version}",
+    dependencies=[Depends(get_auth_context)],
+)
+async def get_institucional_by_version(
+    version: int = Path(..., ge=1, description="Versión de la firma institucional"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+):
+    return await service.get_institucional_by_version(version, client_id)
+
+
+@router.post("/{id}/actualizar-datos-personales")
+@router.post("/actualizar-datos-personales/{id}")
+async def actualizar_datos_personales(
+    request: Request,
+    id: int = Path(..., ge=1, description="ID del registro de tarjeta"),
+    tipo_tarjeta: str = Query("contadores", description="Tipo de tarjeta ('contadores' o 'sociedades')"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    auth_ctx: AuthContext = Depends(get_auth_context),
+):
+    if (tipo_tarjeta or "").lower() in ("sociedades", "sociedad", "society"):
+        auth_ctx.ensure_any_permission(
+            PERMISSIONS.SOC_ACTUALIZAR_DATOS,
+            PERMISSIONS.REP_SOC_ACTUALIZAR_DATOS,
+        )
+    else:
+        auth_ctx.ensure_any_permission(
+            PERMISSIONS.CONT_ACTUALIZAR_DATOS,
+            PERMISSIONS.REP_CONT_ACTUALIZAR_DATOS,
+        )
+
+    user_obj = auth_ctx.user or {}
+    usuario_login = (
+        user_obj.get("login")
+        or user_obj.get("username")
+        or user_obj.get("nombre")
+        or "admin"
+    )
+    ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else "127.0.0.1")
+    if ip and "," in ip:
+        ip = ip.split(",")[0].strip()
+
+    return await service.actualizar_datos_personales(
+        tarjeta_id=id,
+        tipo_tarjeta=tipo_tarjeta,
+        usuario=str(usuario_login),
+        ip=ip,
+        client_id=client_id,
+    )
+
 @router.post(
     "/branding-credentials/institucional/create",
     dependencies=[Depends(require_permission(PERMISSIONS.BRAND_FIRMA_GUARDAR))],
@@ -779,5 +840,138 @@ async def get_reportes_dashboard(
         estado=estado,
         client_id=client_id
     )
+
+
+# =============================================================================
+# PLANTILLA DE ACTIVACIÓN (CONTADORES Y SOCIEDADES)
+# =============================================================================
+def _validar_permiso_plantilla(auth_ctx: AuthContext, tipo_tarjeta: str) -> None:
+    if "sociedad" in str(tipo_tarjeta or "").lower():
+        auth_ctx.ensure_any_permission(PERMISSIONS.PLANT_ACT_SOCIEDADES)
+    else:
+        auth_ctx.ensure_any_permission(PERMISSIONS.PLANT_ACT_CONTADORES)
+
+
+@router.get("/plantilla-activacion/palabras-clave")
+async def get_palabras_clave_plantilla_activacion(
+    tipo_tarjeta: str = Query("contadores", description="Tipo de plantilla ('contadores' o 'sociedades')"),
+    auth_ctx: AuthContext = Depends(get_auth_context),
+):
+    _validar_permiso_plantilla(auth_ctx, tipo_tarjeta)
+    return service.obtener_palabras_clave_plantilla(tipo_tarjeta)
+
+
+@router.get("/plantilla-activacion/formato-ejemplo")
+async def descargar_formato_ejemplo_plantilla_activacion(
+    tipo_tarjeta: str = Query("contadores", description="Tipo de plantilla ('contadores' o 'sociedades')"),
+    auth_ctx: AuthContext = Depends(get_auth_context),
+):
+    _validar_permiso_plantilla(auth_ctx, tipo_tarjeta)
+    docx_bytes, filename = service.descargar_formato_ejemplo_plantilla(tipo_tarjeta)
+    return Response(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+        },
+    )
+
+
+@router.get("/plantilla-activacion/historial")
+async def listar_historial_plantillas_activacion(
+    tipo_tarjeta: str = Query("contadores", description="Tipo de plantilla ('contadores' o 'sociedades')"),
+    page: int = Query(1, ge=1, description="Página actual"),
+    page_size: int = Query(5, ge=1, le=100, description="Registros por página"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    auth_ctx: AuthContext = Depends(get_auth_context),
+):
+    _validar_permiso_plantilla(auth_ctx, tipo_tarjeta)
+    return await service.listar_plantillas_activacion(
+        tipo_tarjeta=tipo_tarjeta,
+        page=page,
+        page_size=page_size,
+        client_id=client_id,
+    )
+
+
+@router.get("/plantilla-activacion/{id}/descargar")
+async def descargar_plantilla_activacion_por_id(
+    id: int = Path(..., ge=1, description="ID de la plantilla en el historial"),
+    tipo_tarjeta: str = Query("contadores", description="Tipo de plantilla ('contadores' o 'sociedades')"),
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    auth_ctx: AuthContext = Depends(get_auth_context),
+):
+    _validar_permiso_plantilla(auth_ctx, tipo_tarjeta)
+    docx_bytes, filename = await service.descargar_plantilla_activacion(id, client_id=client_id)
+    return Response(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+        },
+    )
+
+
+@router.post("/plantilla-activacion/guardar")
+async def guardar_plantilla_activacion(
+    request: Request,
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    auth_ctx: AuthContext = Depends(get_auth_context),
+):
+    import base64
+
+    content_type = (request.headers.get("content-type") or "").lower()
+    titulo = ""
+    tipo_tarjeta = "contadores"
+    nombre_archivo = ""
+    contenido_docx = b""
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        titulo = str(form.get("titulo") or form.get("nombre") or "").strip()
+        tipo_tarjeta = str(form.get("tipo_tarjeta") or "contadores").strip()
+        archivo_obj = form.get("archivo") or form.get("file")
+        if archivo_obj is not None and hasattr(archivo_obj, "read"):
+            nombre_archivo = str(getattr(archivo_obj, "filename", "") or "plantilla.docx")
+            contenido_docx = await archivo_obj.read()
+    else:
+        body = await request.json()
+        titulo = str(body.get("titulo") or body.get("nombre") or "").strip()
+        tipo_tarjeta = str(body.get("tipo_tarjeta") or "contadores").strip()
+        nombre_archivo = str(body.get("nombre_archivo") or body.get("filename") or "").strip()
+        b64_str = str(body.get("archivo_base64") or body.get("contenido_base64") or "").strip()
+        if "," in b64_str:
+            b64_str = b64_str.split(",", 1)[1]
+        if b64_str:
+            try:
+                contenido_docx = base64.b64decode(b64_str)
+            except Exception:
+                contenido_docx = b""
+
+    _validar_permiso_plantilla(auth_ctx, tipo_tarjeta)
+
+    user_obj = auth_ctx.user or {}
+    usuario_login = (
+        user_obj.get("login")
+        or user_obj.get("username")
+        or user_obj.get("nombre")
+        or "admin.jcc"
+    )
+
+    guardada = await service.guardar_plantilla_activacion(
+        tipo_tarjeta=tipo_tarjeta,
+        titulo=titulo,
+        nombre_archivo=nombre_archivo,
+        contenido_docx=contenido_docx,
+        usuario=str(usuario_login),
+        client_id=client_id,
+    )
+    return {
+        "status": "success",
+        "mensaje": f"«{guardada['titulo']}» quedó activa. La plantilla anterior pasó a Inactiva.",
+        "data": guardada,
+    }
 
 

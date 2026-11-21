@@ -340,9 +340,21 @@ class TarjetasService:
             for k in ["patron", "patron_impresion", "logo", "logo_impresion", "color_fondo", "color_letra", "color_letra_impresion", "nombre_director", "cargo_director", "firma_director"]:
                 if b_data.get(k) and not datos_combinados.get(k):
                     datos_combinados[k] = b_data[k]
-            if False:
-                if branding.get(k) and not datos_combinados.get(k):
-                    datos_combinados[k] = branding[k]
+
+        # Respetar la versión de firma institucional con la que se emitió la tarjeta
+        try:
+            v_firma = tarjeta.get("version_firma")
+            if v_firma:
+                inst_ver = await self.repository.get_institucional_by_version(int(v_firma), client_id)
+                if inst_ver:
+                    if inst_ver.get("nombre_director"):
+                        datos_combinados["nombre_director"] = inst_ver["nombre_director"]
+                    if inst_ver.get("cargo_director"):
+                        datos_combinados["cargo_director"] = inst_ver["cargo_director"]
+                    if inst_ver.get("firma_director"):
+                        datos_combinados["firma_director"] = inst_ver["firma_director"]
+        except Exception as e_vf:
+            print(f"[TarjetasService] Advertencia cargando firma por version_firma en generar_pdf_tarjeta: {e_vf}")
 
         from app.services.pdf_generator_service import PdfGeneratorService
         pdf_bytes = PdfGeneratorService.generar_pdf_tarjeta(datos_combinados)
@@ -379,9 +391,21 @@ class TarjetasService:
             for k in ["patron", "patron_impresion", "logo", "logo_impresion", "color_fondo", "color_letra", "color_letra_impresion", "nombre_director", "cargo_director", "firma_director"]:
                 if b_data.get(k) and not datos_combinados.get(k):
                     datos_combinados[k] = b_data[k]
-            if False:
-                if branding.get(k) and not datos_combinados.get(k):
-                    datos_combinados[k] = branding[k]
+
+        # Respetar la versión de firma institucional con la que se emitió la tarjeta
+        try:
+            v_firma = tarjeta.get("version_firma")
+            if v_firma:
+                inst_ver = await self.repository.get_institucional_by_version(int(v_firma), client_id)
+                if inst_ver:
+                    if inst_ver.get("nombre_director"):
+                        datos_combinados["nombre_director"] = inst_ver["nombre_director"]
+                    if inst_ver.get("cargo_director"):
+                        datos_combinados["cargo_director"] = inst_ver["cargo_director"]
+                    if inst_ver.get("firma_director"):
+                        datos_combinados["firma_director"] = inst_ver["firma_director"]
+        except Exception as e_vf:
+            print(f"[TarjetasService] Advertencia cargando firma por version_firma en generar_pdf_tarjeta: {e_vf}")
 
         from app.services.pdf_generator_service import PdfGeneratorService
         pdf_bytes = PdfGeneratorService.generar_pdf_tarjeta(datos_combinados)
@@ -430,9 +454,12 @@ class TarjetasService:
         datos["tipo_tarjeta"] = tipo_str
         datos["consecutivo_soporte_activacion"] = consecutivo
 
+        plantilla_activa = await self.repository.obtener_plantilla_activacion_activa(tipo_str, client_id=client_id)
+        docx_bytes = plantilla_activa.get("contenido_docx") if plantilla_activa else None
+
         from app.services.constancia_activacion_pdf_service import ConstanciaActivacionPdfService
         pdf_service = ConstanciaActivacionPdfService()
-        pdf_bytes = pdf_service.generar_pdf(datos)
+        pdf_bytes = pdf_service.generar_pdf_desde_docx(docx_bytes, datos)
 
         prefijo = "sociedad" if is_sociedad else "contador"
         id_val = tarjeta.get("nit") if is_sociedad else (tarjeta.get("no_tarjeta") or tarjeta.get("no_documento") or tarjeta_id)
@@ -1055,6 +1082,144 @@ class TarjetasService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    async def get_institucional_by_version(self, version: int, client_id: Optional[int] = None) -> Dict[str, Any]:
+        try:
+            result = await self.repository.get_institucional_by_version(version, client_id)
+            if not result:
+                raise PipelineException(
+                    etapa="BRANDING_INSTITUCIONAL",
+                    mensaje=f"No se encontró la versión {version} de la firma institucional.",
+                    cliente_id=client_id,
+                    status_code=status.HTTP_404_NOT_FOUND
+                )
+            return {
+                "status": "success",
+                "data": {
+                    "version": int(result.get("version") or version),
+                    "nombre_director": result.get("nombre_director") or "SANDRA MILENA BARRIOS PULIDO",
+                    "cargo_director": result.get("cargo_director") or "DIRECTOR GENERAL",
+                    "firma_director": result.get("firma_director")
+                }
+            }
+        except PipelineException:
+            raise
+        except Exception as e:
+            print(f"[TarjetasService] Error al consultar firma institucional versión {version}: {e}")
+            raise PipelineException(
+                etapa="BRANDING_INSTITUCIONAL",
+                mensaje=f"No fue posible obtener la firma institucional para la versión {version}.",
+                detalle_tecnico=str(e),
+                cliente_id=client_id,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    async def actualizar_datos_personales(
+        self,
+        tarjeta_id: int,
+        tipo_tarjeta: str = "contadores",
+        usuario: str = "admin",
+        ip: Optional[str] = None,
+        client_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        from app.repositories.tarjetas_repository import extraer_partes_nit
+
+        tipo_norm = "sociedades" if (tipo_tarjeta and "sociedad" in str(tipo_tarjeta).lower()) else "contadores"
+        tarjeta = await self.repository.get_by_id(tarjeta_id, tipo_norm, client_id)
+        if not tarjeta:
+            raise PipelineException(
+                etapa="REGISTRO_NO_ENCONTRADO",
+                mensaje="No se encontró el registro de la tarjeta seleccionada en la base de datos.",
+                cliente_id=client_id,
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+
+        doc_registro = str(tarjeta.get("nit") if tipo_norm == "sociedades" else tarjeta.get("no_documento") or "").strip()
+        if not doc_registro:
+            raise PipelineException(
+                etapa="DOCUMENTO_INVALIDO",
+                mensaje="El registro seleccionado no cuenta con un número de identificación válido para consultar MYJCC.",
+                cliente_id=client_id,
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            consulta = await self.jcc_client.consultar_registro(
+                documento=doc_registro,
+                tipo_tarjeta=tipo_norm,
+                tipo="",
+                client_id=client_id
+            )
+        except Exception as e_conn:
+            raise PipelineException(
+                etapa="SERVICIO_MYJCC_NO_DISPONIBLE",
+                mensaje="No fue posible consultar el servicio MYJCC en este momento. La información del registro se conserva sin cambios.",
+                detalle_tecnico=str(e_conn),
+                cliente_id=client_id,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
+        if not consulta or consulta.get("es_error_conexion"):
+            raise PipelineException(
+                etapa="SERVICIO_MYJCC_NO_DISPONIBLE",
+                mensaje="No fue posible consultar el servicio MYJCC en este momento. La información del registro se conserva sin cambios.",
+                detalle_tecnico=(consulta.get("error") if consulta else "Fallo de comunicación con MYJCC"),
+                cliente_id=client_id,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
+        item_jcc = consulta.get("data")
+        if not consulta.get("encontrado") or not item_jcc:
+            tipo_lbl = "Sociedad" if tipo_norm == "sociedades" else "Contador público"
+            doc_lbl = "NIT" if tipo_norm == "sociedades" else "cédula de ciudadanía"
+            raise PipelineException(
+                etapa="SIN_INFORMACION_MYJCC",
+                mensaje=f"No se encontró información en MYJCC para el {tipo_lbl} con {doc_lbl} {doc_registro}. No se realizó ningún cambio en los datos del registro.",
+                cliente_id=client_id,
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+
+        # Validar concordancia del documento retornado por MYJCC (Escenario 9 - Criterio 3)
+        if tipo_norm == "sociedades":
+            raw_ret = item_jcc.get("raw_nit")
+            if raw_ret is not None and str(raw_ret).strip() != "":
+                _, raiz_reg, full_reg = extraer_partes_nit(doc_registro)
+                _, raiz_ret, full_ret = extraer_partes_nit(raw_ret)
+                if raiz_reg and raiz_ret and raiz_reg != raiz_ret and full_reg != full_ret:
+                    raise PipelineException(
+                        etapa="DOCUMENTO_INCONSISTENTE_MYJCC",
+                        mensaje="La información retornada por MYJCC no corresponde al número de NIT del registro seleccionado.",
+                        cliente_id=client_id,
+                        status_code=status.HTTP_409_CONFLICT
+                    )
+        else:
+            raw_ret = item_jcc.get("raw_no_documento")
+            if raw_ret is not None and str(raw_ret).strip() != "":
+                clean_reg = "".join(c for c in doc_registro if c.isalnum())
+                clean_ret = "".join(c for c in str(raw_ret) if c.isalnum())
+                if clean_reg and clean_ret and clean_reg != clean_ret:
+                    raise PipelineException(
+                        etapa="DOCUMENTO_INCONSISTENTE_MYJCC",
+                        mensaje="La información retornada por MYJCC no corresponde a la cédula de ciudadanía del registro seleccionado.",
+                        cliente_id=client_id,
+                        status_code=status.HTTP_409_CONFLICT
+                    )
+
+        res_upd = await self.repository.actualizar_datos_personales_tarjeta(
+            tarjeta_id=tarjeta_id,
+            tipo_tarjeta=tipo_norm,
+            data_jcc=item_jcc,
+            usuario=usuario,
+            ip=ip,
+            client_id=client_id
+        )
+
+        return {
+            "status": "success",
+            "message": "Datos personales actualizados correctamente con la información de MYJCC.",
+            "data": res_upd["tarjeta"],
+            "auditoria": res_upd["auditoria"]
+        }
+
     async def create_institucional_version(
         self,
         data: InstitucionalConfigCreateSchema,
@@ -1254,6 +1419,44 @@ class TarjetasService:
         tarjeta["estado_tarjeta"] = "Activa"
         tarjeta["estado"] = "Activa"
 
+        # 6. Si pasó de Emitida a Activa, asignar consecutivo, generar constancia PDF y enviar al correo del titular
+        if not ya_estaba_activa:
+            try:
+                consecutivo = await self.repository.obtener_o_asignar_consecutivo_activacion(
+                    tarjeta_id=tarjeta_id,
+                    tipo_tarjeta=tipo_tarjeta,
+                    client_id=client_id,
+                )
+                tarjeta["consecutivo_soporte_activacion"] = consecutivo
+                pdf_bytes, filename = await self.generar_constancia_activacion(
+                    tarjeta_id=tarjeta_id,
+                    tipo_tarjeta=tipo_tarjeta,
+                    client_id=client_id,
+                )
+                correo_titular = str(tarjeta.get("correo") or "").strip()
+                nombre_titular = str(
+                    tarjeta.get("razon_social")
+                    or tarjeta.get("nombre_completo")
+                    or " ".join(
+                        str(tarjeta.get(k) or "").strip()
+                        for k in ("nombres", "primer_apellido", "segundo_apellido")
+                        if tarjeta.get(k)
+                    )
+                    or "Titular"
+                ).strip()
+                numero_soporte = f"ACT-{datetime.now().year}-{int(consecutivo):06d}" if consecutivo else ""
+                if correo_titular and "@" in correo_titular:
+                    from app.services.notificacion_activacion_service import despachar_correo_constancia_activacion
+                    await despachar_correo_constancia_activacion(
+                        correo=correo_titular,
+                        nombre=nombre_titular,
+                        pdf_bytes=pdf_bytes,
+                        filename=filename,
+                        numero_soporte=numero_soporte,
+                    )
+            except Exception as e_const:
+                print(f"[TarjetasService] Advertencia al generar/enviar constancia de activación: {e_const}")
+
         return {
             "success": True,
             "mensaje": "Credencial ya se encontraba activa. Dispositivo móvil sincronizado." if ya_estaba_activa else "Credencial digital activada exitosamente en el dispositivo móvil.",
@@ -1379,4 +1582,149 @@ class TarjetasService:
         Obtiene las novedades del bloque dinámico desde el CMS nx9 para la aplicación móvil.
         """
         return await self.jcc_client.obtener_novedades(client_id=client_id)
+
+    # =========================================================================
+    # PLANTILLA DE ACTIVACIÓN (CONTADORES Y SOCIEDADES)
+    # =========================================================================
+    def obtener_palabras_clave_plantilla(self, tipo_tarjeta: str = "contadores") -> Dict[str, Any]:
+        from app.services.constancia_activacion_pdf_service import (
+            KEYWORDS_CONTADORES,
+            KEYWORDS_SOCIEDADES,
+        )
+        is_soc = "sociedad" in str(tipo_tarjeta or "").lower()
+        tipo_norm = "sociedades" if is_soc else "contadores"
+        cat = KEYWORDS_SOCIEDADES if is_soc else KEYWORDS_CONTADORES
+        columnas = [
+            {"key": k, "placeholder": f"{{{k}}}", "label": lbl}
+            for k, lbl in cat
+            if k not in ("NUMERO_SOPORTE", "FECHA_GENERACION")
+        ]
+        soporte = [
+            {"key": k, "placeholder": f"{{{k}}}", "label": lbl}
+            for k, lbl in cat
+            if k in ("NUMERO_SOPORTE", "FECHA_GENERACION")
+        ]
+        return {
+            "tipo_tarjeta": tipo_norm,
+            "total": len(cat),
+            "columnas": columnas,
+            "soporte": soporte,
+        }
+
+    def descargar_formato_ejemplo_plantilla(self, tipo_tarjeta: str = "contadores") -> Tuple[bytes, str]:
+        from app.services.constancia_activacion_pdf_service import ConstanciaActivacionPdfService
+        svc = ConstanciaActivacionPdfService()
+        return svc.generar_docx_ejemplo(tipo_tarjeta)
+
+    async def listar_plantillas_activacion(
+        self,
+        tipo_tarjeta: str = "contadores",
+        page: int = 1,
+        page_size: int = 5,
+        client_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        return await self.repository.listar_plantillas_activacion(
+            tipo_tarjeta=tipo_tarjeta,
+            page=page,
+            page_size=page_size,
+            client_id=client_id,
+        )
+
+    async def descargar_plantilla_activacion(
+        self,
+        plantilla_id: int,
+        client_id: Optional[int] = None,
+    ) -> Tuple[bytes, str]:
+        row = await self.repository.obtener_plantilla_activacion_por_id(plantilla_id, client_id=client_id)
+        if not row or not row.get("contenido_docx"):
+            raise PipelineException(
+                etapa="PLANTILLA_NO_ENCONTRADA",
+                mensaje="No se encontró la plantilla solicitada en el historial.",
+                cliente_id=client_id,
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        filename = str(row.get("nombre_archivo") or f"plantilla_activacion_{plantilla_id}.docx").strip()
+        if not filename.lower().endswith(".docx"):
+            filename = f"{filename}.docx"
+        return row["contenido_docx"], filename
+
+    async def guardar_plantilla_activacion(
+        self,
+        tipo_tarjeta: str,
+        titulo: str,
+        nombre_archivo: str,
+        contenido_docx: bytes,
+        usuario: str = "admin",
+        client_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        from app.services.constancia_activacion_pdf_service import validar_palabras_clave_docx
+
+        tipo_norm = "sociedades" if "sociedad" in str(tipo_tarjeta or "").lower() else "contadores"
+        tipo_lbl = "Sociedades" if tipo_norm == "sociedades" else "Contadores"
+        titulo_clean = str(titulo or "").strip()
+
+        if not titulo_clean:
+            raise PipelineException(
+                etapa="VALIDACION_PLANTILLA",
+                mensaje="El nombre de la plantilla es obligatorio.",
+                cliente_id=client_id,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        fname_clean = str(nombre_archivo or "").strip()
+        if not fname_clean.lower().endswith(".docx"):
+            raise PipelineException(
+                etapa="FORMATO_ARCHIVO_NO_PERMITIDO",
+                mensaje="Formato no permitido. Solo se permiten archivos Word (.docx).",
+                cliente_id=client_id,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        max_bytes = 5 * 1024 * 1024
+        if not contenido_docx:
+            raise PipelineException(
+                etapa="ARCHIVO_VACIO",
+                mensaje="Debe cargar el archivo de la plantilla (.docx).",
+                cliente_id=client_id,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        if len(contenido_docx) > max_bytes:
+            raise PipelineException(
+                etapa="TAMANO_MAXIMO_EXCEDIDO",
+                mensaje="El archivo supera el tamaño máximo permitido de 5 MB.",
+                cliente_id=client_id,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        try:
+            encontradas, invalidas = validar_palabras_clave_docx(contenido_docx, tipo_norm)
+        except ValueError as ve:
+            raise PipelineException(
+                etapa="DOCX_INVALIDO",
+                mensaje=str(ve),
+                cliente_id=client_id,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        if invalidas:
+            lista_fmt = ", ".join(f"{{{k}}}" for k in invalidas)
+            raise PipelineException(
+                etapa="PALABRAS_CLAVE_INVALIDAS",
+                mensaje=f"El archivo contiene palabras clave que no existen para {tipo_lbl}: {lista_fmt}. Corrija el documento y cárguelo nuevamente.",
+                detalle_tecnico=lista_fmt,
+                cliente_id=client_id,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        guardada = await self.repository.guardar_plantilla_activacion(
+            tipo_tarjeta=tipo_norm,
+            titulo=titulo_clean,
+            nombre_archivo=fname_clean,
+            tamano_bytes=len(contenido_docx),
+            contenido_docx=contenido_docx,
+            usuario=usuario,
+            client_id=client_id,
+        )
+        guardada["palabras_clave_detectadas"] = encontradas
+        return guardada
 

@@ -40,6 +40,186 @@ def extraer_partes_nit(nit: Any) -> Tuple[str, str, str]:
 
 class TarjetasRepository:
 
+    async def ensure_new_requirements_schema(self, client_id: Optional[int] = None) -> None:
+        """
+        Asegura que las tablas y columnas requeridas por los nuevos ajustes JCC existan en la BD:
+        - Columna `version_firma` en `tn_tarjetavirtual_contadores` y `tn_tarjetavirtual_sociedades`
+        - Columna `version_firma` en `tn_tarjetavirtual_config_columnas_filtro_tarjetas`
+        - Tabla `tn_tarjetavirtual_actualizaciones_historial` para trazabilidad de actualización de datos personales
+        - Permisos granulares `contActualizarDatos`, `socActualizarDatos`, `repContActualizarDatos`, `repSocActualizarDatos`
+        """
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                # 1. Resolver versión institucional publicada actual para inicializar tarjetas existentes
+                version_activa = 1
+                try:
+                    await cursor.execute(
+                        """
+                        SELECT version
+                        FROM tn_tarjetavirtual_configuracion_institucional
+                        WHERE publicado = 1
+                        ORDER BY version DESC
+                        LIMIT 1
+                        """
+                    )
+                    r_ver = await cursor.fetchone()
+                    if r_ver and r_ver.get("version"):
+                        version_activa = int(r_ver["version"])
+                except Exception:
+                    version_activa = 1
+
+                # 2. Columna version_firma en contadores y sociedades
+                for tabla in ("tn_tarjetavirtual_contadores", "tn_tarjetavirtual_sociedades"):
+                    try:
+                        await cursor.execute(f"SHOW COLUMNS FROM {tabla} LIKE 'version_firma'")
+                        col_exists = await cursor.fetchone()
+                        if not col_exists:
+                            await cursor.execute(
+                                f"ALTER TABLE {tabla} ADD COLUMN version_firma INT NOT NULL DEFAULT {version_activa}"
+                            )
+                    except Exception as e_col:
+                        print(f"[SchemaMigration] Advertencia al verificar version_firma en {tabla}: {e_col}")
+
+                # 3. Configuración dinámica de columna 'version_firma'
+                for tipo_t in ("contadores", "sociedades"):
+                    try:
+                        await cursor.execute(
+                            """
+                            SELECT id FROM tn_tarjetavirtual_config_columnas_filtro_tarjetas
+                            WHERE tipo_tarjeta = %s AND key_name = 'version_firma'
+                            LIMIT 1
+                            """,
+                            (tipo_t,)
+                        )
+                        cfg_col = await cursor.fetchone()
+                        if not cfg_col:
+                            await cursor.execute(
+                                """
+                                INSERT INTO tn_tarjetavirtual_config_columnas_filtro_tarjetas
+                                    (tipo_tarjeta, key_name, label, visible_defecto, es_filtrable, orden, tipo_dato)
+                                VALUES (%s, 'version_firma', 'Versión firma', 1, 1, 76, 'number')
+                                """,
+                                (tipo_t,)
+                            )
+                    except Exception as e_cfg:
+                        print(f"[SchemaMigration] Advertencia al registrar columna version_firma ({tipo_t}): {e_cfg}")
+
+                # 4. Tabla tn_tarjetavirtual_actualizaciones_historial
+                try:
+                    await cursor.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS tn_tarjetavirtual_actualizaciones_historial (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            tarjeta_id INT NOT NULL,
+                            tipo_tarjeta VARCHAR(30) NOT NULL DEFAULT 'contadores',
+                            usuario VARCHAR(150) NOT NULL,
+                            ip VARCHAR(64) DEFAULT NULL,
+                            fecha DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                            INDEX idx_tarjeta_tipo (tarjeta_id, tipo_tarjeta),
+                            INDEX idx_fecha (fecha)
+                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                        """
+                    )
+                except Exception as e_tbl:
+                    print(f"[SchemaMigration] Advertencia creando tn_tarjetavirtual_actualizaciones_historial: {e_tbl}")
+
+                # 4.5. Tabla tn_tarjetavirtual_plantillas_activacion y semilla inicial
+                try:
+                    await cursor.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS tn_tarjetavirtual_plantillas_activacion (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            tipo_tarjeta VARCHAR(30) NOT NULL DEFAULT 'contadores',
+                            titulo VARCHAR(150) NOT NULL,
+                            nombre_archivo VARCHAR(255) NOT NULL,
+                            tamano_bytes INT NOT NULL DEFAULT 0,
+                            contenido_docx LONGBLOB NOT NULL,
+                            estado VARCHAR(20) NOT NULL DEFAULT 'Activa',
+                            usuario VARCHAR(150) NOT NULL DEFAULT 'admin',
+                            fecha_modificacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                            INDEX idx_tipo_estado (tipo_tarjeta, estado),
+                            INDEX idx_fecha_modificacion (fecha_modificacion)
+                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                        """
+                    )
+                    from app.services.constancia_activacion_pdf_service import ConstanciaActivacionPdfService
+                    pdf_svc = ConstanciaActivacionPdfService()
+                    for t_plant, lbl_plant in (("contadores", "Contadores"), ("sociedades", "Sociedades")):
+                        await cursor.execute(
+                            "SELECT COUNT(*) AS cnt FROM tn_tarjetavirtual_plantillas_activacion WHERE tipo_tarjeta = %s",
+                            (t_plant,),
+                        )
+                        r_cnt = await cursor.fetchone()
+                        if not r_cnt or not r_cnt.get("cnt"):
+                            import base64
+                            docx_b, fname = pdf_svc.generar_docx_ejemplo(t_plant)
+                            docx_b64 = base64.b64encode(docx_b).decode("ascii")
+                            fecha_seed = datetime.now(COLOMBIA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+                            await cursor.execute(
+                                """
+                                INSERT INTO tn_tarjetavirtual_plantillas_activacion
+                                    (tipo_tarjeta, titulo, nombre_archivo, tamano_bytes, contenido_docx, estado, usuario, fecha_modificacion)
+                                VALUES (%s, %s, %s, %s, %s, 'Activa', 'sistema', %s)
+                                """,
+                                (
+                                    t_plant,
+                                    f"Soporte de activación – {lbl_plant} v1",
+                                    fname,
+                                    len(docx_b),
+                                    docx_b64,
+                                    fecha_seed,
+                                ),
+                            )
+                except Exception as e_plant:
+                    print(f"[SchemaMigration] Advertencia creando tn_tarjetavirtual_plantillas_activacion: {e_plant}")
+
+                # 5. Asignar nuevos permisos a usuarios que ya tienen permisos sobre el módulo TarjetasDigitales
+                try:
+                    await cursor.execute(
+                        """
+                        SELECT DISTINCT uid
+                        FROM tn_user_permsmod
+                        WHERE modulo = 'TarjetasDigitales'
+                        """
+                    )
+                    uids_rows = await cursor.fetchall() or []
+                    nuevos_permisos = (
+                        "contActualizarDatos",
+                        "socActualizarDatos",
+                        "repContActualizar",
+                        "repSocActualizar",
+                        "plantActContadores",
+                        "plantActSociedades",
+                    )
+                    for u_row in uids_rows:
+                        u_id = u_row.get("uid")
+                        if not u_id:
+                            continue
+                        for perm in nuevos_permisos:
+                            await cursor.execute(
+                                """
+                                SELECT 1 FROM tn_user_permsmod
+                                WHERE uid = %s AND modulo = 'TarjetasDigitales' AND opcion = %s
+                                LIMIT 1
+                                """,
+                                (u_id, perm),
+                            )
+                            if not await cursor.fetchone():
+                                await cursor.execute(
+                                    """
+                                    INSERT INTO tn_user_permsmod (uid, modulo, opcion)
+                                    VALUES (%s, 'TarjetasDigitales', %s)
+                                    """,
+                                    (u_id, perm),
+                                )
+                except Exception as e_perm:
+                    print(f"[SchemaMigration] Advertencia sincronizando permisos en tn_user_permsmod: {e_perm}")
+
+                await conn.commit()
+        finally:
+            conn.close()
+
     async def get_all(
         self, 
         tipo_tarjeta: Optional[str] = None, 
@@ -88,7 +268,8 @@ class TarjetasRepository:
                         "acta_jcc": "ttc.acta_jcc",
                         "correo": "ttc.correo",
                         "fecha_emision": "ttc.fecha_emision",
-                        "fecha_activacion": "fecha_activacion"
+                        "fecha_activacion": "fecha_activacion",
+                        "version_firma": "ttc.version_firma"
                     }
                     
                     # Condiciones WHERE dinámicas
@@ -167,6 +348,13 @@ class TarjetasRepository:
                         t_asoc = extra["tipo_asociado"].strip()
                         conditions.append("(LOWER(ttc.tipo_asociado) = LOWER(%s) OR (%s = 'primeraVez' AND (ttc.tipo_asociado IS NULL OR ttc.tipo_asociado = '')))")
                         params.extend([t_asoc, t_asoc])
+                    if extra.get("version_firma") is not None and str(extra.get("version_firma")).strip() != "":
+                        try:
+                            v_int = int(str(extra["version_firma"]).lower().replace("v", "").strip())
+                            conditions.append("ttc.version_firma = %s")
+                            params.append(v_int)
+                        except ValueError:
+                            pass
 
                     where_clause = " WHERE " + " AND ".join(conditions)
                     
@@ -185,7 +373,8 @@ class TarjetasRepository:
                         "resolucion": "tts.resolucion",
                         "acta_jcc": "tts.acta_jcc",
                         "fecha_emision": "tts.fecha_emision",
-                        "fecha_activacion": "fecha_activacion"
+                        "fecha_activacion": "fecha_activacion",
+                        "version_firma": "tts.version_firma"
                     }
                     
                     conditions = ["1=1"]
@@ -246,6 +435,13 @@ class TarjetasRepository:
                         t_asoc = extra["tipo_asociado"].strip()
                         conditions.append("(LOWER(tts.tipo_asociado) = LOWER(%s) OR (%s = 'primeraVez' AND (tts.tipo_asociado IS NULL OR tts.tipo_asociado = '')))")
                         params.extend([t_asoc, t_asoc])
+                    if extra.get("version_firma") is not None and str(extra.get("version_firma")).strip() != "":
+                        try:
+                            v_int = int(str(extra["version_firma"]).lower().replace("v", "").strip())
+                            conditions.append("tts.version_firma = %s")
+                            params.append(v_int)
+                        except ValueError:
+                            pass
 
                     where_clause = " WHERE " + " AND ".join(conditions)
                     order_column = columnas_permitidas.get(order_by, "tts.id")
@@ -294,6 +490,7 @@ class TarjetasRepository:
                             ttc.hash_sha256,
                             ttc.token_verificacion,
                             ttc.consecutivo_soporte_activacion,
+                            COALESCE(ttc.version_firma, 1) AS version_firma,
                             (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = ttc.id AND teh.estado = 'Activa') AS fecha_activacion
                     """
                 else:
@@ -320,6 +517,7 @@ class TarjetasRepository:
                             tts.hash_sha256,
                             tts.token_verificacion,
                             tts.consecutivo_soporte_activacion,
+                            COALESCE(tts.version_firma, 1) AS version_firma,
                             (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = tts.id AND teh.estado = 'Activa') AS fecha_activacion
                     """
 
@@ -377,6 +575,7 @@ class TarjetasRepository:
             ttc.hash_sha256,
             ttc.token_verificacion,
             ttc.consecutivo_soporte_activacion,
+            COALESCE(ttc.version_firma, 1) AS version_firma,
             (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = ttc.id AND teh.estado = 'Activa') AS fecha_activacion
         FROM tn_tarjetavirtual_contadores ttc
     """
@@ -404,6 +603,7 @@ class TarjetasRepository:
             tts.hash_sha256,
             tts.token_verificacion,
             tts.consecutivo_soporte_activacion,
+            COALESCE(tts.version_firma, 1) AS version_firma,
             (SELECT DATE_FORMAT(MAX(teh.fecha), '%%Y-%%m-%%d %%H:%%i:%%s') FROM tn_tarjetavirtual_estados_historial teh WHERE teh.tarjeta_id = tts.id AND teh.estado = 'Activa') AS fecha_activacion
         FROM tn_tarjetavirtual_sociedades tts
     """
@@ -625,6 +825,33 @@ class TarjetasRepository:
                     print(f"[TarjetasRepository] Error consultando lecturas QR para {tarjeta_id}: {e_lec}")
                     lecturas = []
 
+                # 4. Obtener historial de actualizaciones de datos personales
+                actualizaciones = []
+                try:
+                    tipo_hist = "sociedades" if (
+                        (tipo and "sociedad" in tipo.lower())
+                        or (tarjeta and tarjeta.get("nit") and not tarjeta.get("no_documento"))
+                    ) else "contadores"
+                    await cursor.execute(
+                        """
+                        SELECT
+                            id,
+                            tarjeta_id,
+                            tipo_tarjeta,
+                            usuario,
+                            ip,
+                            DATE_FORMAT(fecha, '%%Y-%%m-%%d %%H:%%i') AS fecha
+                        FROM tn_tarjetavirtual_actualizaciones_historial
+                        WHERE tarjeta_id = %s AND tipo_tarjeta = %s
+                        ORDER BY fecha DESC, id DESC
+                        """,
+                        (tarjeta_id, tipo_hist)
+                    )
+                    actualizaciones = await cursor.fetchall()
+                except Exception as e_act:
+                    print(f"[TarjetasRepository] Error consultando actualizaciones de datos personales para {tarjeta_id}: {e_act}")
+                    actualizaciones = []
+
                 # Si no hay estados explícitos aún para este ID, generar registro inicial de emisión
                 if not estados:
                     estados = [
@@ -641,7 +868,8 @@ class TarjetasRepository:
                 return {
                     "tarjeta": tarjeta,
                     "estados": estados or [],
-                    "lecturas": lecturas or []
+                    "lecturas": lecturas or [],
+                    "actualizaciones": actualizaciones or []
                 }
         finally:
             conn.close()
@@ -819,6 +1047,15 @@ class TarjetasRepository:
                         "es_filtrable": True,
                         "orden": 75,
                         "tipo_dato": "datetime"
+                    })
+                if not any(r.get("key") == "version_firma" for r in rows):
+                    rows.append({
+                        "key": "version_firma",
+                        "label": "Versión firma",
+                        "visible_defecto": True,
+                        "es_filtrable": True,
+                        "orden": 76,
+                        "tipo_dato": "number"
                     })
                 return rows
         finally:
@@ -1158,6 +1395,66 @@ class TarjetasRepository:
         finally:
             conn.close()
 
+    async def get_institucional_by_version(self, version: int, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    """
+                    SELECT
+                        id,
+                        nombre_director,
+                        cargo_director,
+                        firma_director,
+                        version,
+                        publicado,
+                        observacion,
+                        usuario_creacion_id,
+                        DATE_FORMAT(created_at, '%%Y-%%m-%%d %%H:%%i') AS created_at_formatted
+                    FROM tn_tarjetavirtual_configuracion_institucional
+                    WHERE version = %s
+                    ORDER BY id DESC
+                    LIMIT 1
+                    """,
+                    (int(version),)
+                )
+                return await cursor.fetchone()
+        finally:
+            conn.close()
+
+    async def _get_active_version_firma(self, cursor) -> int:
+        try:
+            await cursor.execute(
+                """
+                SELECT version
+                FROM tn_tarjetavirtual_configuracion_institucional
+                WHERE publicado = 1
+                ORDER BY version DESC
+                LIMIT 1
+                """
+            )
+            row = await cursor.fetchone()
+            if row:
+                val = row.get("version") if isinstance(row, dict) else row[0]
+                if val:
+                    return int(val)
+            await cursor.execute(
+                """
+                SELECT version
+                FROM tn_tarjetavirtual_configuracion_institucional
+                ORDER BY version DESC
+                LIMIT 1
+                """
+            )
+            row = await cursor.fetchone()
+            if row:
+                val = row.get("version") if isinstance(row, dict) else row[0]
+                if val:
+                    return int(val)
+        except Exception as e:
+            print(f"[TarjetasRepository] Advertencia consultando version_firma activa: {e}")
+        return 1
+
     async def create_institucional_version(self, data: Dict[str, Any], client_id: Optional[int] = None) -> int:
         cid = client_id or data.get("client_id", 20001)
         conn = await get_client_connection(cid)
@@ -1466,6 +1763,7 @@ class TarjetasRepository:
         conn = await get_client_connection(client_id)
         try:
             async with conn.cursor() as cursor:
+                version_firma = int(data.get("version_firma") or await self._get_active_version_firma(cursor))
                 query = """
                     INSERT INTO tn_tarjetavirtual_contadores (
                         no_tarjeta,
@@ -1490,11 +1788,12 @@ class TarjetasRepository:
                         estado,
                         foto,
                         hash_sha256,
-                        token_verificacion
+                        token_verificacion,
+                        version_firma
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s, %s, %s, NOW(), %s, %s,
-                        %s, %s, %s
+                        %s, %s, %s, %s
                     )
                 """
                 
@@ -1528,7 +1827,8 @@ class TarjetasRepository:
                     data.get("estado") or data.get("estado_tarjeta") or "Emitida",
                     data.get("foto"),
                     hash_calc,
-                    token_verif
+                    token_verif,
+                    version_firma
                 )
                 
                 await cursor.execute(query, values)
@@ -1573,6 +1873,7 @@ class TarjetasRepository:
         conn = await get_client_connection(client_id)
         try:
             async with conn.cursor() as cursor:
+                version_firma = int(data.get("version_firma") or await self._get_active_version_firma(cursor))
                 query = """
                     INSERT INTO tn_tarjetavirtual_sociedades (
                         no_expd,
@@ -1594,10 +1895,11 @@ class TarjetasRepository:
                         foto,
                         representante_legal,
                         hash_sha256,
-                        token_verificacion
+                        token_verificacion,
+                        version_firma
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, NOW(), %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s
                     )
                 """
                 
@@ -1628,7 +1930,8 @@ class TarjetasRepository:
                     data.get("foto"),
                     data.get("representante_legal") or data.get("representante"),
                     hash_calc,
-                    token_verif
+                    token_verif,
+                    version_firma
                 )
                 
                 await cursor.execute(query, values)
@@ -1666,6 +1969,130 @@ class TarjetasRepository:
         except Exception as e:
             print(f"[TarjetasRepository] Error al crear sociedad: {e}")
             raise
+        finally:
+            conn.close()
+
+    async def actualizar_datos_personales_tarjeta(
+        self,
+        tarjeta_id: int,
+        tipo_tarjeta: str,
+        data_jcc: Dict[str, Any],
+        usuario: str,
+        ip: Optional[str] = None,
+        client_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        HU: Actualización de datos personales de Contadores y Sociedades desde MYJCC.
+        - Actualiza atómicamente los campos retornados por MYJCC sin sobrescribir con valores vacíos o nulos.
+        - Preserva intactos: estado de la tarjeta, número de tarjeta/inscripción, expediente, documento/NIT,
+          fechas de emisión y activación, hashes y versión de firma institucional.
+        - Registra trazabilidad en tn_tarjetavirtual_actualizaciones_historial.
+        """
+        tipo_norm = "sociedades" if (tipo_tarjeta and "sociedad" in str(tipo_tarjeta).lower()) else "contadores"
+        tabla = "tn_tarjetavirtual_sociedades" if tipo_norm == "sociedades" else "tn_tarjetavirtual_contadores"
+
+        def clean_val(val: Any) -> Optional[str]:
+            if val is None:
+                return None
+            s = str(val).strip()
+            return s if s != "" else None
+
+        set_clauses: List[str] = []
+        params: List[Any] = []
+
+        if tipo_norm == "contadores":
+            campos_mapeo = [
+                "nombres",
+                "primer_apellido",
+                "segundo_apellido",
+                "tipo_documento",
+                "universidad",
+                "estado_contador",
+                "resolucion",
+                "fecha_estado",
+                "fecha_radicacion",
+                "fecha_resolucion",
+                "acta_jcc",
+                "fecha_grado",
+                "seccional",
+                "correo",
+            ]
+            for col in campos_mapeo:
+                val = clean_val(data_jcc.get(col))
+                if val is not None:
+                    set_clauses.append(f"{col} = %s")
+                    params.append(val)
+
+            foto_val = clean_val(data_jcc.get("foto") or data_jcc.get("pdf"))
+            if foto_val is not None and len(foto_val) > 50:
+                set_clauses.append("foto = %s")
+                params.append(foto_val)
+        else:
+            campos_mapeo = [
+                "razon_social",
+                "tipo_sociedad",
+                "correo",
+                "fecha_radicacion",
+                "estado_sociedad",
+                "resolucion",
+                "fecha_resolucion",
+                "acta_jcc",
+                "estado_solicitud",
+                "tipo_solicitud",
+                "representante_legal",
+            ]
+            for col in campos_mapeo:
+                val = clean_val(data_jcc.get(col))
+                if val is not None:
+                    set_clauses.append(f"{col} = %s")
+                    params.append(val)
+
+            foto_val = clean_val(data_jcc.get("foto") or data_jcc.get("pdf"))
+            if foto_val is not None and len(foto_val) > 50:
+                set_clauses.append("foto = %s")
+                params.append(foto_val)
+
+        ahora_dt = datetime.now(COLOMBIA_TZ)
+        fecha_sql = ahora_dt.strftime("%Y-%m-%d %H:%M:%S")
+        fecha_ui = ahora_dt.strftime("%Y-%m-%d %H:%M")
+        usuario_limpio = (str(usuario).strip() if usuario else "admin") or "admin"
+        ip_limpia = (str(ip).strip() if ip else "127.0.0.1") or "127.0.0.1"
+
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute("START TRANSACTION")
+                try:
+                    if set_clauses:
+                        update_sql = f"UPDATE {tabla} SET {', '.join(set_clauses)} WHERE id = %s"
+                        await cursor.execute(update_sql, tuple(params + [tarjeta_id]))
+
+                    await cursor.execute(
+                        """
+                        INSERT INTO tn_tarjetavirtual_actualizaciones_historial
+                            (tarjeta_id, tipo_tarjeta, usuario, ip, fecha)
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (tarjeta_id, tipo_norm, usuario_limpio, ip_limpia, fecha_sql)
+                    )
+                    hist_id = cursor.lastrowid
+                    await cursor.execute("COMMIT")
+                except Exception:
+                    await cursor.execute("ROLLBACK")
+                    raise
+
+                tarjeta_actualizada = await self._query_single_tarjeta(cursor, "id", tarjeta_id, tipo_norm)
+                return {
+                    "tarjeta": tarjeta_actualizada,
+                    "auditoria": {
+                        "id": hist_id,
+                        "tarjeta_id": tarjeta_id,
+                        "tipo_tarjeta": tipo_norm,
+                        "usuario": usuario_limpio,
+                        "ip": ip_limpia,
+                        "fecha": fecha_ui
+                    }
+                }
         finally:
             conn.close()
 
@@ -3070,7 +3497,206 @@ class TarjetasRepository:
                     f"UPDATE {tabla} SET consecutivo_soporte_activacion = %s WHERE id = %s",
                     (siguiente, tarjeta_id)
                 )
+                await conn.commit()
                 return siguiente
+        finally:
+            conn.close()
+
+    async def listar_plantillas_activacion(
+        self,
+        tipo_tarjeta: str = "contadores",
+        page: int = 1,
+        page_size: int = 5,
+        client_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        tipo_norm = "sociedades" if "sociedad" in str(tipo_tarjeta or "").lower() else "contadores"
+        page = max(1, int(page or 1))
+        page_size = min(max(1, int(page_size or 5)), 100)
+        offset = (page - 1) * page_size
+
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    "SELECT COUNT(*) AS total FROM tn_tarjetavirtual_plantillas_activacion WHERE tipo_tarjeta = %s",
+                    (tipo_norm,),
+                )
+                row_total = await cursor.fetchone()
+                total = int(row_total["total"]) if row_total and row_total.get("total") else 0
+                total_pages = math.ceil(total / page_size) if total > 0 else 1
+
+                await cursor.execute(
+                    """
+                    SELECT
+                        id,
+                        tipo_tarjeta,
+                        titulo,
+                        nombre_archivo,
+                        tamano_bytes,
+                        estado,
+                        usuario,
+                        DATE_FORMAT(fecha_modificacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_modificacion
+                    FROM tn_tarjetavirtual_plantillas_activacion
+                    WHERE tipo_tarjeta = %s
+                    ORDER BY fecha_modificacion DESC, id DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    (tipo_norm, page_size, offset),
+                )
+                rows = await cursor.fetchall() or []
+                return {
+                    "data": rows,
+                    "total": total,
+                    "page": page,
+                    "page_size": page_size,
+                    "total_pages": total_pages,
+                }
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _decode_docx_blob(raw_val: Any) -> bytes:
+        import base64
+        if not raw_val:
+            return b""
+        if isinstance(raw_val, bytes):
+            if raw_val.startswith(b"PK\x03\x04"):
+                return raw_val
+            try:
+                return base64.b64decode(raw_val)
+            except Exception:
+                return raw_val
+        if isinstance(raw_val, str):
+            try:
+                return base64.b64decode(raw_val)
+            except Exception:
+                return raw_val.encode("utf-8")
+        return b""
+
+    async def obtener_plantilla_activacion_activa(
+        self,
+        tipo_tarjeta: str = "contadores",
+        client_id: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        tipo_norm = "sociedades" if "sociedad" in str(tipo_tarjeta or "").lower() else "contadores"
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    """
+                    SELECT
+                        id,
+                        tipo_tarjeta,
+                        titulo,
+                        nombre_archivo,
+                        tamano_bytes,
+                        contenido_docx,
+                        estado,
+                        usuario,
+                        DATE_FORMAT(fecha_modificacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_modificacion
+                    FROM tn_tarjetavirtual_plantillas_activacion
+                    WHERE tipo_tarjeta = %s AND estado = 'Activa'
+                    ORDER BY fecha_modificacion DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (tipo_norm,),
+                )
+                row = await cursor.fetchone()
+                if row and "contenido_docx" in row:
+                    row["contenido_docx"] = self._decode_docx_blob(row["contenido_docx"])
+                return row
+        except Exception as e:
+            print(f"[TarjetasRepository] Advertencia consultando plantilla activa ({tipo_norm}): {e}")
+            return None
+        finally:
+            conn.close()
+
+    async def obtener_plantilla_activacion_por_id(
+        self,
+        plantilla_id: int,
+        client_id: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    """
+                    SELECT
+                        id,
+                        tipo_tarjeta,
+                        titulo,
+                        nombre_archivo,
+                        tamano_bytes,
+                        contenido_docx,
+                        estado,
+                        usuario,
+                        DATE_FORMAT(fecha_modificacion, '%%Y-%%m-%%d %%H:%%i:%%s') AS fecha_modificacion
+                    FROM tn_tarjetavirtual_plantillas_activacion
+                    WHERE id = %s
+                    LIMIT 1
+                    """,
+                    (plantilla_id,),
+                )
+                row = await cursor.fetchone()
+                if row and "contenido_docx" in row:
+                    row["contenido_docx"] = self._decode_docx_blob(row["contenido_docx"])
+                return row
+        finally:
+            conn.close()
+
+    async def guardar_plantilla_activacion(
+        self,
+        tipo_tarjeta: str,
+        titulo: str,
+        nombre_archivo: str,
+        tamano_bytes: int,
+        contenido_docx: bytes,
+        usuario: str = "admin",
+        client_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        import base64
+        tipo_norm = "sociedades" if "sociedad" in str(tipo_tarjeta or "").lower() else "contadores"
+        fecha_ahora = datetime.now(COLOMBIA_TZ).strftime("%Y-%m-%d %H:%M:%S")
+        docx_b64 = base64.b64encode(contenido_docx).decode("ascii") if isinstance(contenido_docx, bytes) else str(contenido_docx)
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute(
+                    """
+                    UPDATE tn_tarjetavirtual_plantillas_activacion
+                    SET estado = 'Inactiva'
+                    WHERE tipo_tarjeta = %s AND estado = 'Activa'
+                    """,
+                    (tipo_norm,),
+                )
+                await cursor.execute(
+                    """
+                    INSERT INTO tn_tarjetavirtual_plantillas_activacion
+                        (tipo_tarjeta, titulo, nombre_archivo, tamano_bytes, contenido_docx, estado, usuario, fecha_modificacion)
+                    VALUES (%s, %s, %s, %s, %s, 'Activa', %s, %s)
+                    """,
+                    (
+                        tipo_norm,
+                        titulo.strip(),
+                        nombre_archivo.strip(),
+                        int(tamano_bytes),
+                        docx_b64,
+                        usuario.strip() or "admin",
+                        fecha_ahora,
+                    ),
+                )
+                nuevo_id = cursor.lastrowid
+                await conn.commit()
+                return {
+                    "id": nuevo_id,
+                    "tipo_tarjeta": tipo_norm,
+                    "titulo": titulo.strip(),
+                    "nombre_archivo": nombre_archivo.strip(),
+                    "tamano_bytes": int(tamano_bytes),
+                    "estado": "Activa",
+                    "usuario": usuario.strip() or "admin",
+                    "fecha_modificacion": fecha_ahora,
+                }
         finally:
             conn.close()
 
