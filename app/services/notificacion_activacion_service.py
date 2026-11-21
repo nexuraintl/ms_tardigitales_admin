@@ -104,3 +104,56 @@ async def despachar_correo_activacion(
     except Exception as e:
         logger.error(f"[NotificacionActivacion] Excepción al enviar correo de activación: {e!r}")
         return {"status": "error", "message": repr(e)}
+
+
+async def despachar_correo_constancia_activacion(
+    correo: str,
+    nombre: str,
+    pdf_bytes: bytes,
+    filename: str = "constancia_activacion.pdf",
+    numero_soporte: str = "",
+) -> Dict[str, Any]:
+    """
+    Envía por correo el PDF de la constancia de activación al titular (contador o sociedad)
+    cuando su tarjeta pasa de estado Emitida a Activa, a través del puente NX9:
+    POST /api/TarjetasDigitales/enviarConstanciaActivacion
+    """
+    if not correo or "@" not in correo:
+        logger.warning(f"[NotificacionActivacion] Correo inválido '{correo}', se omite envío de constancia.")
+        return {"status": "omitted", "reason": "invalid_email"}
+
+    if not pdf_bytes:
+        logger.warning(f"[NotificacionActivacion] PDF vacío para '{nombre}', se omite envío de constancia.")
+        return {"status": "omitted", "reason": "empty_pdf"}
+
+    pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
+    bridge_base = resolver_url_puente_nx9()
+    url_enviar = f"{bridge_base}/enviarConstanciaActivacion"
+
+    headers_bridge = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    }
+    if any(k in url_enviar for k in ("host.docker.internal", "localhost", "127.0.0.1")):
+        headers_bridge["Host"] = "local-jcc.nexura.com.co"
+
+    payload = {
+        "correo": correo.strip(),
+        "nombre": nombre.strip() if nombre else "Titular",
+        "pdf_base64": pdf_base64,
+        "filename": filename or "constancia_activacion.pdf",
+        "numero_soporte": numero_soporte or "",
+    }
+
+    try:
+        logger.info(f"[NotificacionActivacion] Despachando constancia de activación a puente NX9: {url_enviar} (Destino: {correo})...")
+        async with httpx.AsyncClient(timeout=25.0, verify=False) as client:
+            resp = await client.post(url_enviar, json=payload, headers=headers_bridge)
+            if resp.status_code == 200:
+                return resp.json()
+            logger.warning(f"[NotificacionActivacion] NX9 retornó HTTP {resp.status_code} en constancia: {resp.text}")
+            return {"status": "error", "code": resp.status_code, "text": resp.text}
+    except Exception as e:
+        logger.error(f"[NotificacionActivacion] Excepción al enviar constancia de activación: {e!r}")
+        return {"status": "error", "message": repr(e)}

@@ -26,6 +26,7 @@ class PERMISSIONS:
     CONT_VER_TARJETA = "contVerTarjeta"
     CONT_EXPORTAR_TARJETA = "contExportarTarjeta"
     CONT_REGENERAR = "contRegenerar"
+    CONT_ACTUALIZAR_DATOS = "contActualizarDatos"
     CONT_HISTORIAL = "contHistorial"
 
     # 2. Tarjeta digital para sociedades (Gestión)
@@ -36,6 +37,7 @@ class PERMISSIONS:
     SOC_VER_TARJETA = "socVerTarjeta"
     SOC_EXPORTAR_TARJETA = "socExportarTarjeta"
     SOC_REGENERAR = "socRegenerar"
+    SOC_ACTUALIZAR_DATOS = "socActualizarDatos"
     SOC_HISTORIAL = "socHistorial"
 
     # 3. Notificaciones
@@ -51,6 +53,7 @@ class PERMISSIONS:
     REP_CONT_VER_TARJETA = "repContVerTarjeta"
     REP_CONT_EXPORTAR = "repContExportar"
     REP_CONT_REGENERAR = "repContRegenerar"
+    REP_CONT_ACTUALIZAR_DATOS = "repContActualizar"
     REP_CONT_HISTORIAL = "repContHistorial"
 
     # 6. Reportes — Sociedades
@@ -59,6 +62,7 @@ class PERMISSIONS:
     REP_SOC_VER_TARJETA = "repSocVerTarjeta"
     REP_SOC_EXPORTAR = "repSocExportar"
     REP_SOC_REGENERAR = "repSocRegenerar"
+    REP_SOC_ACTUALIZAR_DATOS = "repSocActualizar"
     REP_SOC_HISTORIAL = "repSocHistorial"
 
     # 7. Reportes — Notificaciones
@@ -90,6 +94,10 @@ class PERMISSIONS:
 
     # 13. Auditoría API
     AUDITORIA_API_REG = "auditoriaApiReg"
+
+    # 14. Plantilla de activación
+    PLANT_ACT_CONTADORES = "plantActContadores"
+    PLANT_ACT_SOCIEDADES = "plantActSociedades"
 
 
 ALL_MODULE_PERMISSIONS: Set[str] = {
