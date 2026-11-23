@@ -1143,10 +1143,9 @@ class TarjetasService:
             )
 
         try:
-            consulta = await self.jcc_client.consultar_registro(
+            consulta = await self.jcc_client.consultar_all(
                 documento=doc_registro,
                 tipo_tarjeta=tipo_norm,
-                tipo="",
                 client_id=client_id
             )
         except Exception as e_conn:
