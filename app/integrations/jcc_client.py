@@ -224,6 +224,193 @@ class JccClient:
                 "error": f"Error de conexión con la API de la JCC (posible VPN inactiva o servicio inaccesible): {str(e)}"
             }
 
+    async def consultar_all(
+        self,
+        documento: str,
+        tipo_tarjeta: str = "contadores",
+        client_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Consulta el endpoint /consultasall/ de la API JCC (a través del puente PHP VPN si está activo).
+        A diferencia de /contadores/ y /sociedades/, este endpoint retorna los datos actualizados
+        incluso cuando la tarjeta digital ya fue activada.
+        Payload esperado por JCC:
+          {"tipo": "contador" | "sociedad", "documento": "<documento_limpio>"}
+        Respuesta esperada de JCC:
+          {"resultado": [{...}]}
+        """
+        tipo_norm = "sociedades" if (tipo_tarjeta and "sociedad" in str(tipo_tarjeta).lower()) else "contadores"
+        tipo_payload = "sociedad" if tipo_norm == "sociedades" else "contador"
+        documento_limpio = self._limpiar_documento(documento, tipo_norm) if documento else ""
+
+        url = f"{PROD_BASE_URL}/consultasall/"
+        self.last_url = url
+        self.last_metodo = "POST"
+
+        payload = {
+            "tipo": tipo_payload,
+            "documento": documento_limpio
+        }
+
+        headers = {
+            "Authorization": f"Bearer {JCC_API_BEARER_TOKEN}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+        }
+        if any(k in url for k in ("host.docker.internal", "localhost", "127.0.0.1")):
+            headers["Host"] = "local-jcc.nexura.com.co"
+
+        resolved_client_id = client_id or int(os.getenv("CLIENT_ID", "20001"))
+        start_time = time.perf_counter()
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
+                response = await client.post(url, json=payload, headers=headers)
+
+            duracion_ms = int((time.perf_counter() - start_time) * 1000)
+
+            try:
+                cuerpo_audit = response.json() if response.status_code == 200 else {"http_status": response.status_code, "body": response.text}
+            except Exception:
+                cuerpo_audit = {"http_status": response.status_code, "raw": response.text}
+
+            try:
+                await self.auditoria.registrar(
+                    client_id=resolved_client_id,
+                    tipo_tarjeta=tipo_norm,
+                    tipo="consultasall",
+                    metodo="POST",
+                    url=url,
+                    parametros_peticion=payload,
+                    cuerpo_respuesta=cuerpo_audit,
+                    duracion_ms=duracion_ms,
+                    codigo_http=response.status_code
+                )
+            except Exception as audit_err:
+                logger.error(f"[JccClient] Error al registrar auditoría API (consultasall): {audit_err}")
+
+            if response.status_code == 200:
+                raw_data = response.json()
+                data = self._normalizar_respuesta(raw_data)
+
+                if isinstance(data, dict) and data.get("error"):
+                    return {
+                        "encontrado": False,
+                        "data": None,
+                        "disponibles": [],
+                        "es_error_conexion": False,
+                        "error": data["error"]
+                    }
+
+                resultados = data.get("resultado") if isinstance(data, dict) else []
+                if isinstance(resultados, dict):
+                    resultados = [resultados]
+                elif not isinstance(resultados, list):
+                    resultados = []
+
+                if not resultados:
+                    return {
+                        "encontrado": False,
+                        "data": None,
+                        "disponibles": [],
+                        "es_error_conexion": False
+                    }
+
+                registros_limpios = []
+                for raw_item in resultados:
+                    if not isinstance(raw_item, dict):
+                        continue
+
+                    foto_b64 = raw_item.get("FOTO") or raw_item.get("foto") or raw_item.get("pdf") or ""
+                    if not foto_b64 or "no existe" in str(foto_b64).lower() or "error" in str(foto_b64).lower():
+                        foto_b64 = None
+                    elif not str(foto_b64).startswith("data:"):
+                        foto_b64 = f"data:image/jpeg;base64,{foto_b64}"
+
+                    raw_no_doc = raw_item.get("NO_DOCUMENTO") if raw_item.get("NO_DOCUMENTO") is not None else raw_item.get("no_documento")
+                    raw_nit = raw_item.get("NIT") if raw_item.get("NIT") is not None else raw_item.get("nit")
+
+                    clean_record = {
+                        "no_tarjeta": raw_item.get("NO_TARJETA") or raw_item.get("no_tarjeta"),
+                        "nombres": raw_item.get("NOMBRES") or raw_item.get("nombres"),
+                        "primer_apellido": raw_item.get("PRIMER_APELLIDO") or raw_item.get("primer_apellido"),
+                        "segundo_apellido": raw_item.get("SEGUNDO_APELLIDO") or raw_item.get("segundo_apellido"),
+                        "no_expd": raw_item.get("NO_EXPD") or raw_item.get("EXPEDIENTE") or raw_item.get("no_expd"),
+                        "tipo_documento": raw_item.get("TIPO_DOCUMENTO") or raw_item.get("tipo_documento"),
+                        "no_documento": str(raw_no_doc) if raw_no_doc is not None else documento_limpio,
+                        "raw_no_documento": raw_no_doc,
+                        "universidad": raw_item.get("UNIVERSIDAD") or raw_item.get("universidad"),
+                        "estado_contador": raw_item.get("ESTADO_CONTADOR") or raw_item.get("estado_contador"),
+                        "resolucion": raw_item.get("RESOLUCION") or raw_item.get("resolucion"),
+                        "fecha_estado": raw_item.get("FECHA_ESTADO") or raw_item.get("fecha_estado"),
+                        "fecha_radicacion": raw_item.get("FECHA_RADICACION") or raw_item.get("fecha_radicacion"),
+                        "fecha_resolucion": raw_item.get("FECH_RESOLU") or raw_item.get("FECHA_RESOLUCION") or raw_item.get("fecha_resolucion"),
+                        "acta_jcc": raw_item.get("ACTA_JCC") or raw_item.get("acta_jcc"),
+                        "fecha_grado": raw_item.get("FECHA_GRADO") or raw_item.get("fecha_grado"),
+                        "seccional": raw_item.get("SECCIONAL") or raw_item.get("seccional"),
+                        "correo": raw_item.get("EMAIL") or raw_item.get("CORREO") or raw_item.get("correo"),
+                        "razon_social": raw_item.get("RAZON_SOCIAL") or raw_item.get("razon_social"),
+                        "nit": str(raw_nit) if raw_nit is not None else documento_limpio,
+                        "raw_nit": raw_nit,
+                        "tipo_sociedad": raw_item.get("TIPO_SOCIEDAD") or raw_item.get("tipo_sociedad"),
+                        "inscripcion": raw_item.get("INSCRIPCION") or raw_item.get("inscripcion"),
+                        "estado_sociedad": raw_item.get("ESTADO_SOCIEDAD") or raw_item.get("estado_sociedad"),
+                        "estado_solicitud": raw_item.get("ESTADO_SOLICITUD") or raw_item.get("estado_solicitud"),
+                        "tipo_solicitud": raw_item.get("TIPO_SOLICITUD") or raw_item.get("tipo_solicitud"),
+                        "representante_legal": raw_item.get("REPRESENTANTE_LEGAL") or raw_item.get("representante_legal"),
+                        "foto": foto_b64,
+                        "pdf": foto_b64
+                    }
+                    registros_limpios.append(clean_record)
+
+                if not registros_limpios:
+                    return {
+                        "encontrado": False,
+                        "data": None,
+                        "disponibles": [],
+                        "es_error_conexion": False
+                    }
+
+                return {
+                    "encontrado": True,
+                    "es_error_conexion": False,
+                    "data": registros_limpios[0],
+                    "disponibles": registros_limpios
+                }
+            else:
+                es_servidor = response.status_code >= 500
+                return {
+                    "encontrado": False,
+                    "es_error_conexion": es_servidor,
+                    "data": None,
+                    "error": f"Error de comunicación HTTP {response.status_code} desde la API JCC (/consultasall/)"
+                }
+
+        except Exception as e:
+            duracion_ms = int((time.perf_counter() - start_time) * 1000)
+            try:
+                await self.auditoria.registrar(
+                    client_id=resolved_client_id,
+                    tipo_tarjeta=tipo_norm,
+                    tipo="consultasall",
+                    metodo="POST",
+                    url=url,
+                    parametros_peticion=payload,
+                    cuerpo_respuesta={"error_conexion": str(e)},
+                    duracion_ms=duracion_ms,
+                    codigo_http=502
+                )
+            except Exception as audit_err:
+                logger.error(f"[JccClient] Error al registrar auditoría API (consultasall) tras fallo de red: {audit_err}")
+
+            return {
+                "encontrado": False,
+                "es_error_conexion": True,
+                "data": None,
+                "error": f"Error de conexión con la API de la JCC (/consultasall/): {str(e)}"
+            }
+
     async def obtener_novedades(self, client_id: Optional[int] = None) -> Dict[str, Any]:
         """
         Consulta las novedades del bloque dinámico (bloqueDynamic) desde el CMS nx9.
