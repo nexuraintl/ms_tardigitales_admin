@@ -1,0 +1,57 @@
+name: CamerCloud Pruebas
+values:
+  - key: url
+    value: 'https://camercloud.camerfirma.com/fortress'
+    enabled: true
+    type: default
+    description: Endpoint base de CamerCloud (Viafirma Fortress)
+  - key: client_id
+    value: 'PRUEBASJCCNEX'
+    enabled: true
+    type: default
+    description: Client ID entorno de pruebas JCC
+  - key: client_secret
+    value: 'a5bf3bf32d7d4bef87af44e1f99c964e'
+    enabled: true
+    type: secret
+    description: Client Secret entorno de pruebas JCC
+  - key: redirect_uri
+    value: '*'
+    enabled: true
+    type: default
+    description: URI de retorno configurada en Viafirma Fortress
+  - key: user_code
+    value: ''
+    enabled: true
+    type: default
+    description: Número de identificación del usuario firmante (si aplica)
+  - key: certificateCode
+    value: ''
+    enabled: true
+    type: default
+    description: Código del certificado alojado en Fortress (firma desatendida)
+  - key: myExp_reference
+    value: 'CERT-PRUEBA-001'
+    enabled: true
+    type: default
+    description: Referencia del certificado expedido
+  - key: access_token
+    value: ''
+    enabled: true
+    type: secret
+    description: Token Bearer OAuth2 obtenido en el paso 1
+  - key: authCode
+    value: ''
+    enabled: true
+    type: default
+    description: Código de autorización devuelto en el paso 2
+  - key: exeCode
+    value: ''
+    enabled: true
+    type: default
+    description: Código de ejecución devuelto en el paso 2
+  - key: signatureCode
+    value: ''
+    enabled: true
+    type: default
+    description: Código de firma devuelto en el paso 3

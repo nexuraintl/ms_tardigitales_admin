@@ -1,0 +1,27 @@
+$kind: collection
+description: |-
+  ## Firma de PDF con certificados de usuario centralizados
+
+  En esta carpeta se han incluido los casos de uso para cubrir la funcionalidad mínima requerida para la siguientes necesidades.
+
+  - el sistema con el que el usuario interactuará es camerfirma_colombia, encargado de consumir las APIs del sistema de firma centralizado de Viafirma.
+  - el usuario debe autorizar explícitamente el uso de su certificado superando el factor o factores de protección definidos por el administrador del sistema de firma centralizado.
+      
+
+  ### Prerequisitos
+
+  - el usuario debe estar previamente registrado en el sistema de firma centralizado.
+  - El usuario debe estar enrolado en al menos un Factor de Autenticación
+  - el certificado debe estar activo.
+      
+
+  ### Ejecución de casos de uso
+
+  La ejecución de los casos de uso no puede automatizarse en su totalidad, debiendo realizar una tarea manual en uno de los pasos, correspondiente al proceso atendido por el propietario del certificado para autorizar su uso.
+
+  Orden de ejecucción:
+
+  - ejecutar casos 1 y 2
+  - copiar salida de consola de ejecución del caso 2, seguir instrucciones en un navegador; requiere usuario registrado en Viafirma.
+  - tras finalizar la tarea manual previa, ejecutar casos 4 y 5.
+order: 2000

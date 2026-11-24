@@ -1,0 +1,180 @@
+$kind: http-request
+description: |-
+  ### NUEVA SOLICITUD DE FIRMA
+
+  ```
+  {{url}}/api/v1/signature
+  ```
+
+  En esta solicitud definiremos las propiedades de la firma, el documento o documentos que deben ser firmados,
+   y otras propiedades opcionales que explicamos a continuación.
+
+  Este método POST recibe un JSON con la siguiente estructura:
+
+  ```json
+   {
+      "redirectUri": "string",
+      "signatureConfigurations": [{
+          "userCode" : "string",
+          "ref" : "string",
+          "signatureType": "string",
+          "signatureAlgorithm": "string",
+          "packaging": "string",
+          "document": {
+              "name": "string",
+              "url": "string"
+          },
+          "padesConfiguration": {
+              "stamper": {
+                  "type": "string",
+                  "page": 0,
+                  "xAxis": 0,
+                  "yAxis": 0
+              }
+          }
+      }]
+
+  }
+  ```
+
+  Donde:
+
+  * **redirectUri**: URL a la que será redirigido el usuario tras autorizar el uso de su certificado, es decir, ha superado el 
+  factor de protección que se haya establecido en sus políticas de uso. 
+
+  **signatureConfigurations**
+
+  * **userCode**: (opcional) puedes fijar el identificador del usuario que debe firmar; este código suele estar asociado al DNI 
+  o similar. Al hacerlo, la pantalla que interactúa con el usuario NO le solicitará este dato, omitiendo un paso en el proceso de firma 
+  y optimizando con ello los tiempos. En caso de no hacer uso de este atributo, el usuario debe indicarlo en el primer paso 
+  del proceso de autorización del uso de su certificado.
+  * **ref**: (opcional) puedes indicar cualquier referencia a tu proceso de negocio, por ejemplo, número de expediente, contrato, etc. 
+  Si lo usas lo mantendremos durante todo el ciclo de vida de la solicitud, pudiendo ser consultado por métodos del API.
+  signatureType: define el formato de firma, y los valores admitidos son: PADES_B, PADES_T, PADES_LTA. NOTA: para uso de formatos 
+  que requieran el uso obligatorio de sello de tiempo debes incorporar en la política de firma una configuración de uso de 
+  la TSA autorizada, como mínimo, URL, y en caso de estar securizada, usuario/contraseña, o certificado. 
+  * **signatureAlgorithm**: define el algoritmo de firma, por defecto, 'RSA_SHA256'.
+  * **packaging**: define la envoltura del formato, por defecto, 'ENVELOPED'.
+
+  **document**
+
+  * **document**: el documento o documentos que van a ser firmados pueden definirse de dos formas: pasándolo directamente en el payload en base64 
+  o referenciado en una URI. Para cada caso el atributo que define el tipo de uso se explica a continuación:
+
+  * **name**: (opcional) define el nombre de documento firmado
+
+  * **bytesB64**: documento codificado en base64. 
+  * **url**: documento disponible en una URI. Opción recomendada para el envío de un paquete numeroso de documentos para evitar superar 
+  límites en la longitud de la request que pudieran establecer los distintos elementos de seguridad de la red WAF, Proxies, etc.
+
+
+  **padesConfiguration**
+
+  stamper: (opcional) objeto que te permite diseñar la representación gráfica de la firma que será impresa sobre el PDF 
+  y asociada como anotación de la firma. Las opciones de cofiguración son las siguientes:
+
+  * **type**: 'QR_BARCODE128' combinación de código QR + Barcode128.
+  * **page**: indica el número de la página en la que se insertará; además puedes usar '0' para todas las páginas, y '-1' para la última.
+  * **xAxis**: coordenadas X donde compienza el vértice superior izquierdo del objeto.
+  * **yAxis**: coordenadas Y donde compienza el vértice superior derecho del objeto.
+
+  ### Response
+
+  Como respuesta este servicio devolverá un JSON con la siguiente estructura:
+
+  ```
+  {
+      "authCode": "string",
+      "exeCode": "string"
+  }
+  ```
+  Donde:
+
+  * **authCode**: código que necesitaremos métodos de autenticación de usuarios con certificado digital.
+  * **exeCode**: código que necesitaremos para ejecutar una firma previamente autorizada.
+
+  NOTA: en esta colección postman de ejemplo ambos atributos son persistidos automáticamente como variables de la colección. En este caso de uso necesitaremos el atributo ``exeCode``` para CONSTRUIR la URL al que el usuario final debe ser redirigido para autorizar el uso de su certificado para la firma, y tendrá el siguiente formato.
+
+  ```
+  {url}/oauth2/v1/auth?signature_code={authCode}&scope=signature&client_id={clientId}&redirect_uri={redirect_uri}
+  ```
+
+  Ejemplo:
+
+  https://sandbox.viafirma.com/fortress/oauth2/v1/auth?signature_code=dc01aba568af4d84a7128f3bec24f491&scope=signature&client_id=camerFirma_colombia&redirect_uri=http://localhost:8080/fortress_response
+
+  **IMPORTANTE PARA LA EJECUCIÓN DEL CASO 3**
+
+  Tras la finalización de la ejecución de este caso de uso número 2 (y 2b), copiar la URL mostrada en la consola. En ella se pinta una URL de autorización que debe copiarse para abrirla en un navegador web. Con ella, el usuario podrá autorizar el uso de su certificado que será usado para la firma. De igual forma podrá visualizar el PDF que se dispone a firmar.
+
+  Tras finalizar la autorización, el navegador hará redirect a la URL que se haya definido en la solicitud; aun siendo esta una URL mock, provocando con ello un error en el navegador, el proceso de autorización ha finalizado correctamente.
+
+  Solo a partir de ese momento se podrán ejecutar los siguientes casos de uso 4 y 5.
+
+  NOTA: en esta colección postman la URL la construimos automáticamente a partir del authCode obtenido y la imprimimos por Consola para facilitar las pruebas.
+url: "{{url}}/api/v1/signature"
+method: POST
+headers:
+  Authorization: Bearer {{access_token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: "{\r
+
+    \    \"redirectUri\": \"{{redirect_uri}}\",\r
+
+    \    \"signatureConfigurations\": [{\r
+
+    \        \"userCode\" : \"{{user_code}}\",\r
+
+    \        \"ref\" : \"{{myExp_reference}}\",\r
+
+    \        \"signatureType\": \"CADES_B\",\r
+
+    \        \"signatureAlgorithm\": \"RSA_SHA256\",\r
+
+    \        \"packaging\": \"ENVELOPED\",\r
+
+    \        \"document\": {\r
+
+    \            \"name\": \"contrato.xml\",\r
+
+    \            \"bytesB64\": \"PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz48T3BlbmNpdGllcyB4bWxucz0iREVGQVVMVF9OUyI+PEVsZW1lbnQ+PGNsaXBwaW5nPnBydWViYSBkZSBMYWR5IGNvbiBmaXJtYTwvY2xpcHBpbmc+PGFwcFRhZ1JlcHJlc0Rvb3JOYW1lLz48c2VuZEluZm8vPjxhcHBUYWdBcHBsaWNCaXJ0aERhdGUvPjxhcHBUYWdBcHBsaWNOdW1iZXJOYW1lPi0tU2VsZWNjaW9uZSB1bmEgT3BjacOzbi0tPC9hcHBUYWdBcHBsaWNOdW1iZXJOYW1lPjxzZWxlY3RlZFNlY3Rpb24+NTwvc2VsZWN0ZWRTZWN0aW9uPjxhcHBUYWdBcHBsaWNOYW1lLz48YXN1bnRvPnBydWViYSBkZSBMYWR5IGNvbiBmaXJtYTwvYXN1bnRvPjxyZWNvcmQ+MDwvcmVjb3JkPjx0ZXJjZXJvTm9tYnJlTmV3Lz48YXBwVGFnQXBwbGljQmxvY2svPjxoaWRkZW5hcHBUYWdSZXByZXNJZFN0cmVldC8+PGhpZGRlbkRhdGUvPjx0ZXJjZXJvTm9tYnJlTGFiZWwvPjxmaXJtYT5QcnVlYmFfTGFkeSBWYWxkZXJyYW1hIDUyOTc0NTU2PC9maXJtYT48Qm9vbGVhbiBuYW1lPSJiaW9tZXRyaWNTaWduYXR1cmUiIHZhbHVlPSJmYWxzZSIvPjx0b2tlbkRpZ2l0YWxpemF0aW9uLz48c2VsZWN0ZWRQb3NpdGlvbi8+PGRpc3RpbmNpb24vPjxiaW9tZXRyaWNTaWduYXR1cmVEZXZpY2UvPjxhcHBUYWdBcHBsaWNJZFN0cmVldC8+PE1hcCBtYXAtc2l6ZT0iMCIgbmFtZT0iZHluYW1pY0ZpbGVzIi8+PGFkbWluSWRTdHJlZXQvPjxmaXJtYW50ZT5QcnVlYmFfTGFkeSBWYWxkZXJyYW1hIDUyOTc0NTU2PC9maXJtYW50ZT48YXBwVGFnUmVwcmVzWmlwLz48YWN0aXZpdHk+Z2VuZXJhcjwvYWN0aXZpdHk+PEJvb2xlYW4gbmFtZT0ic3RhcnRlZEJ5Q2l0aXplbiIgdmFsdWU9ImZhbHNlIi8+PGFwcFRhZ1JlcHJlc0lkU3RyZWV0Lz48YXBwbGljYW50U2hvd05hbWUvPjxhcHBUYWdSZXByZXNGYXgvPjxhbmV4b3MvPjxhcHBUYWdSZXByZXNOdW1iZXJOYW1lLz48ZG9jUmVzb2x1Y2lvbk51bWVyby8+PEJvb2xlYW4gbmFtZT0ic3RhcnRCaW9tZXRyaWNTaWduYXR1cmUiIHZhbHVlPSJmYWxzZSIvPjxkc1llYXI+MjAyNDwvZHNZZWFyPjxnZW5lcmF0ZVRlbXBsYXRlLz48ZG9jdW1lbnRWaWV3PmZpcm1hcnxhcHJvYmFyfGdlbmVyYXJ8PC9kb2N1bWVudFZpZXc+PGFwcFRhZ0FwcGxpY1N0YWlyLz48YXBwVGFnUmVwcmVzQ29udGFjdC8+PHNlbGVjdGVkQXJlYUxhYmVsPkFHRU5DSUEgUFJFU0lERU5DSUFMIERFIENPT1BFUkFDScOTTiBJTlRFUk5BQ0lPTkFMIERFIENPTE9NQklBPC9zZWxlY3RlZEFyZWFMYWJlbD48YXBwVGFnUmVwcmVzVHlwZS8+PHRlcmNlcm9DYXJnby8+PGFwcFRhZ0FwcGxpY1RlbGVwaG9uZS8+PHJlY29yZERhdGUvPjxzZWxlY3RlZFBvc2l0aW9uVW5pdC8+PGFwcGxpY2FudE9jY3VwYXRpb24vPjxhcHBUYWdSZXByZXNMb2NhbGl0eS8+PGFwcFRhZ0FwcGxpY1VwZGF0ZS8+PGFwcFRhZ0FwcGxpY0ttTmFtZT4tLVNlbGVjY2lvbmUgdW5hIE9wY2nDs24tLTwvYXBwVGFnQXBwbGljS21OYW1lPjxkaXN0aW5jaW9uTGFiZWwvPjxhcHBUYWdSZXByZXNLbU5hbWUvPjxhZG1pbkZsb29yPlN1ZGFtw6lyaWNhPC9hZG1pbkZsb29yPjxyZWxhdGVkQWRtaW5GaWxlSWQvPjxtYW5hZ2VyLz48YXBwVGFnUmVwcmVzVXBkYXRlLz48YXBwbGljYW50TGFuZ3VhZ2UvPjxhcHBUYWdBcHBsaWNDb250YWN0Lz48ZG9jdW1lbnROYW1lPmdlbmVyYXI8L2RvY3VtZW50TmFtZT48YWRtaW5Mb2NhbGl0eVRleHQvPjxhcHBUYWdSZXByZXNTdGFpck5hbWUvPjx1c2VySWQ+UHJ1ZWJhX0xhZHkgVmFsZGVycmFtYSA1Mjk3NDU1NjwvdXNlcklkPjxhcHBUYWdTZWxlY3RlZFJlcHJlc2VudGF0aXZlLz48aGlkZGVuYXBwVGFnUmVwcmVzU3RhaXIvPjxhcHBUYWdSZXByZXNQcm92aW5jZUlkLz48YXBwVGFnUmVwcmVzTG9jYWxpdHlJZC8+PG5hdmlnYXRvcj5Nb3ppbGxhLzUuMCAoV2luZG93cyBOVCAxMC4wOyBXaW42NDsgeDY0KSBBcHBsZVdlYktpdC81MzcuMzYgKEtIVE1MLCBsaWtlIEdlY2tvKSBDaHJvbWUvMTI1LjAuMC4wIFNhZmFyaS81MzcuMzY8L25hdmlnYXRvcj48YXBwVGFnUmVwcmVzQ29udGFjdFRoaXJkcGFydHkvPjxsYW5ndWFnZT5lc19DTzwvbGFuZ3VhZ2U+PGhpZGRlbmFwcFRhZ0FwcGxpY051bWJlci8+PGFkbWluQ291bnRyeUlkPjE3MDwvYWRtaW5Db3VudHJ5SWQ+PHByb2Nlc3NWZXJzaW9uPjEuMDwvcHJvY2Vzc1ZlcnNpb24+PGFwcFRhZ1JlcHJlc0NvbnRhY3ROYW1lLz48dGlwb0NvbXVuaWNhY2lvbkxhYmVsPkNpcmN1bGFyPC90aXBvQ29tdW5pY2FjaW9uTGFiZWw+PGFwcFRhZ0FwcGxpY0NvdW50cnlJZD4xNzA8L2FwcFRhZ0FwcGxpY0NvdW50cnlJZD48YXByb2JhZG9yTmFtZURERERELz48YXBwVGFnQXBwbGljTmlmLz48ZW50aXR5QWxpYXM+YXBjPC9lbnRpdHlBbGlhcz48YXBwVGFnQXBwbGljTmV3Q29udGFjdERlc2NyaXB0aW9uLz48aGlkZGVuYXBwVGFnQXBwbGljU3RhaXIvPjxlbGFib3JhZG9yPlBydWViYV9MYWR5IFZhbGRlcnJhbWEgNTI5NzQ1NTY8L2VsYWJvcmFkb3I+PGNpdGl6ZW5JZC8+PGJpb21ldHJpY1NpZ25hdHVyZUxhbmd1YWdlLz48dGVyY2Vyb05vbWJyZS8+PGFwcFRhZ1JlcHJlc1RlbGVwaG9uZS8+PGhpZGRlbmFwcFRhZ0FwcGxpY0Jsb2NrLz48YXBwVGFnQXBwbGljQmxvY2tOYW1lPi0tU2VsZWNjaW9uZSB1bmEgT3BjacOzbi0tPC9hcHBUYWdBcHBsaWNCbG9ja05hbWU+PGFwcFRhZ1JlcHJlc0xvY2FsaXR5VGV4dC8+PGFwcFRhZ1JlcHJlc1RlbGVwaG9uZTIvPjxhZG1pbkZpbGVTdGFydERhdGU+MTEvMDYvMjAyNDwvYWRtaW5GaWxlU3RhcnREYXRlPjxzZWxlY3RlZEFyZWE+MTwvc2VsZWN0ZWRBcmVhPjxoaWRkZW5hcHBUYWdBcHBsaWNEb29yLz48YXBwVGFnUmVwcmVzQnVpbGRpbmdOdW1iZXIvPjxwcmludERvY3VtZW50VHlwZS8+PGFwcFRhZ0FwcGxpY0lkU3RyZWV0TmFtZS8+PGJsb2NrZWRGb3JtLz48YXBwVGFnUmVwcmVzTmV3Q29udGFjdERlc2NyaXB0aW9uLz48YXBwVGFnQXBwbGljTnVtYmVyLz48bmFtZS8+PGFwcFRhZ0FwcGxpY1Byb3ZpbmNlSWQ+MTE8L2FwcFRhZ0FwcGxpY1Byb3ZpbmNlSWQ+PHVzdWFyaW9Vbml0PjEyPC91c3VhcmlvVW5pdD48YWRtaW5Mb2NhbGl0eS8+PGludGVyZXNhZG9OYW1lREREREQvPjxub3RpZmljYXRpb25UeXBlLz48YXBwVGFnT25CZWhhbGY+YXBwVGFnLmFwcGxpY2FudDwvYXBwVGFnT25CZWhhbGY+PGFkbWluU3RyZWV0Lz48cmVjb3JkU3RvcmUvPjxhcHBUYWdSZXByZXNDb3VudHJ5Lz48aGlkZGVuYXBwVGFnUmVwcmVzQmxvY2svPjxyZWNvcmRUZXh0Lz48cGF5bWVudFRpY2tldC8+PHBheW1lbnRDb25jZXB0Lz48YXBwVGFnU2VsZWN0ZWRBcHBsaWNhbnQvPjxhZG1pblByb3ZpbmNlVGV4dC8+PGFkbWluRG9vci8+PGFwcFRhZ0FwcGxpY0NvbnRhY3RUaGlyZHBhcnR5Lz48YXBwVGFnUmVwcmVzQ2lmLz48YXBwVGFnU2VsZWN0ZWRSZXByZXNlbnRlZC8+PGFwcFRhZ1JlcHJlc1N1cm5hbWVzLz48c2VuZEluZm9NYWlsLz48dXNlck5hbWU+UHJ1ZWJhX0xhZHlfVmFsZGVycmFtYV81Mjk3NDU1NjwvdXNlck5hbWU+PHJlcElkLz48c2VsZWN0ZWRFbnRpdHkvPjxoaWRkZW5hcHBUYWdBcHBsaWNJZFN0cmVldC8+PGJpb21ldHJpY1NpZ25hdHVyZVNpZ25lck5hbWUvPjxhZG1pbkxvbmdpdHVkZS8+PGNvbWVudGFyaW9BcHJvYmFkb3IvPjxhZG1pbkttLz48c2VsZWN0ZWRMYW5ndWFnZS8+PGFwcFRhZ1JlcHJlc0Jsb2NrTmFtZS8+PGNvcGlhTmFtZURERERELz48YWRtaW5CdWlsZGluZ051bWJlci8+PG9wZXJhdGluZ1N5c3RlbS8+PGFwcFRhZ1JlcHJlc0NvdW50cnlJZC8+PGFwcFRhZ1JlcHJlc05ld0NvbnRhY3QvPjxhZG1pbkJsb2NrLz48d29ya2Zsb3dJbnN0YW5jZT5nZW5lcmFyQ29tdW5pY2Fkb19pbnN0YW5jZV9hcGM0MzQ8L3dvcmtmbG93SW5zdGFuY2U+PEJvb2xlYW4gbmFtZT0iZW1wbG95ZWVQcm9jZXNzIiB2YWx1ZT0idHJ1ZSIvPjxhcHBUYWdBcHBsaWNCdWlsZGluZ051bWJlci8+PGludGVybm8+dHJ1ZTwvaW50ZXJubz48aGlkZGVuYXBwVGFnUmVwcmVzRG9vci8+PGFkbWluTGF0aXR1ZGUvPjxwcmlvcml0eS8+PGFwcFRhZ1JlcHJlc1N1cm5hbWUxLz48YXBwVGFnUmVwcmVzU3VybmFtZTIvPjxhcHBUYWdBcHBsaWNEb29yLz48YXBwVGFnUmVwcmVzUHVibGljQWRtaW5Db2RlPiA8L2FwcFRhZ1JlcHJlc1B1YmxpY0FkbWluQ29kZT48c2VsZWN0ZWRTZWN0aW9uTGFiZWw+RElSRUNDScOTTiBBRE1JTklTVFJBVElWQSBZIEZJTkFOQ0lFUkE8L3NlbGVjdGVkU2VjdGlvbkxhYmVsPjxhcHBUYWdSZXByZXNEb29yLz48dXN1YXJpbz5Tb2ZtYW5hZ2VtZW50IFBydWViYXMgMTAxMDIzMTwvdXN1YXJpbz48ZHNEYXk+MTE8L2RzRGF5Pjxjb3BpYURERERELz48bml2ZWxTZWd1cmlkYWRMYWJlbD5Qw7pibGljbzwvbml2ZWxTZWd1cmlkYWRMYWJlbD48YW5vdGhlckFkbWluRmlsZS8+PGFwcFRhZ0FwcGxpY0ttLz48YWRtaW5Mb2NhbGl0eUlkPjE8L2FkbWluTG9jYWxpdHlJZD48YXBwVGFnQXBwbGljUHVibGljQWRtaW4vPjxhZG1pbkNvdW50cnkvPjxhcHBUYWdBcHBsaWNQcm92aW5jZT5CT0dPVEEgRC5DLjwvYXBwVGFnQXBwbGljUHJvdmluY2U+PGFwcFRhZ0FwcGxpY1N0YWlyTmFtZT4tLVNlbGVjY2lvbmUgdW5hIE9wY2nDs24tLTwvYXBwVGFnQXBwbGljU3RhaXJOYW1lPjxzZWxlY3RlZFVuaXRMYWJlbD5HRVNUScOTTiBERSBURUNOT0xPR8ONQVMgREUgTEEgSU5GT1JNQUNJw5NOPC9zZWxlY3RlZFVuaXRMYWJlbD48YXBwVGFnQXBwbGljQ29udGFjdE5hbWUvPjxhcHBUYWdBcHBsaWNGbG9vcj5TdWRhbcOpcmljYTwvYXBwVGFnQXBwbGljRmxvb3I+PGFwcFRhZ0FwcGxpY05ld0NvbnRhY3QvPjxhZG1pblByb3ZpbmNlSWQ+MTE8L2FkbWluUHJvdmluY2VJZD48YXBwbGljYW50VHlwZS8+PHByb2Nlc3NJZD5nZW5lcmFyQ29tdW5pY2FkbzwvcHJvY2Vzc0lkPjxhZG1pblN0YWlyLz48YmlvbWV0cmljU2lnbmF0dXJlU2lnbmVySWQvPjxoaWRkZW5hcHBUYWdSZXByZXNOdW1iZXIvPjxudW1BdHRhY2htZW50cy8+PHRyYXNsYWRvLz48ZG9jQ3VlcnBvPnBydWViYSBkZSBMYWR5IGNvbiBmaXJtYSBkaWdpdGFsPC9kb2NDdWVycG8+PGFkbWluWmlwPjY8L2FkbWluWmlwPjxyZWNvcmREZXBhcnRtZW50Lz48YWRtaW5Qcm92aW5jZS8+PGFwcFRhZ0FwcGxpY1N0cmVldC8+PGFwcFRhZ0FwcGxpY1B1YmxpY0FkbWluQ29kZS8+PGFwcFRhZ1JlcHJlc0ttLz48aGlkZGVuYXBwVGFnUmVwcmVzS20vPjxpbnRlcmVzYWRvREREREQvPjxoaWRkZW5hcHBUYWdBcHBsaWNLbS8+PHdvcmtmbG93VmVyc2lvbj4xLjA8L3dvcmtmbG93VmVyc2lvbj48YXBwVGFnUmVwcmVzU3RyZWV0Lz48cGF5bWVudFRyYW5zYWN0aW9uSWQvPjxhcHBUYWdBcHBsaWNCdXNpbmVzc05hbWUvPjxhcHBUYWdSZXByZXNOdW1iZXIvPjxhcHBUYWdBcHBsaWNGYXgvPjxNYXAgbWFwLXNpemU9IjAiIG5hbWU9ImR5bmFtaWNQcm9wZXJ0aWVzIi8+PGFwcFRhZ0FwcGxpY0xvY2FsaXR5VGV4dC8+PGFwcFRhZ0FwcGxpY0Rvb3JOYW1lPi0tU2VsZWNjaW9uZSB1bmEgT3BjacOzbi0tPC9hcHBUYWdBcHBsaWNEb29yTmFtZT48Qm9vbGVhbiBuYW1lPSJlbXBsb3llZU1vZGUiIHZhbHVlPSJ0cnVlIi8+PGNvbWVudGFyaW9GaXJtYW50ZS8+PGFwcFRhZ1JlcHJlc0lkU3RyZWV0TmFtZS8+PHJlZmVyZW5jZS8+PGFwcFRhZ0FwcGxpY1Byb3ZpbmNlVGV4dC8+PGRvY1Jlc29sdWNpb25Db25zaWRlcmFuZG8vPjxhcHBUYWdBcHBsaWNTdXJuYW1lcy8+PGFwcm9iYWRvckRERERELz48YXBwVGFnUmVwcmVzRW1haWwvPjxhcHBUYWdBcHBsaWNUeXBlPmFwcFRhZy50eXBlLm5hdHVyYWwucGVyc29uPC9hcHBUYWdBcHBsaWNUeXBlPjxhcHBUYWdSZXByZXNCbG9jay8+PGdyb3VwLz48cmVjb3JkTnVtYmVyLz48bml2ZWxTZWd1cmlkYWQ+MTwvbml2ZWxTZWd1cmlkYWQ+PHJlcXVlc3RUZW1wbGF0ZS8+PGFwcFRhZ0FwcGxpY1RlbGVwaG9uZTIvPjxhcHBUYWdSZXByZXNOYW1lLz48YXBwVGFnUmVwcmVzTmlmLz48YXBwVGFnUmVwcmVzQnVzaW5lc3NOYW1lLz48ZHNNb250aD4wNjwvZHNNb250aD48YXBwVGFnUmVwcmVzUHJvdmluY2VUZXh0Lz48YXBwVGFnQXBwbGljQ291bnRyeT5Db2xvbWJpYTwvYXBwVGFnQXBwbGljQ291bnRyeT48YXBwVGFnUmVwcmVzUHJvdmluY2UvPjxhcHBUYWdBcHBsaWNaaXA+NjwvYXBwVGFnQXBwbGljWmlwPjxvYnNlcnZhY2lvbmVzLz48aGFzVGVtcGxhdGU+eWVzPC9oYXNUZW1wbGF0ZT48d29ya2Zsb3dJZD5nZW5lcmFyQ29tdW5pY2Fkbzwvd29ya2Zsb3dJZD48Y2l1ZGFkYW5vLz48dGlwb0NvbXVuaWNhY2lvbj4yPC90aXBvQ29tdW5pY2FjaW9uPjxvY0FwcGxpY2FudElkLz48cGF5bWVudEFtb3VudC8+PGFwcFRhZ0FwcGxpY0VtYWlsLz48YXBwVGFnQXBwbGljU3VybmFtZTIvPjxhcHBUYWdBcHBsaWNTdXJuYW1lMS8+PHVzdWFyaW9BcmVhPjE8L3VzdWFyaW9BcmVhPjxzZWxlY3RlZFVuaXQ+MTI8L3NlbGVjdGVkVW5pdD48YXBwVGFnUmVwcmVzRmxvb3IvPjxhZG1pbkZpbGVJZD5PRkkyNC0wMDAwMDA5NDwvYWRtaW5GaWxlSWQ+PGFwcFRhZ0FwcGxpY0NpZi8+PGRvY1Jlc29sdWNpb25UaXR1bG8vPjxkb2NSZXNvbHVjaW9uRmVjaGEvPjxyZWNvcmRZZWFyLz48YXR0YWNobWVudERlc2MvPjxyZXBDaGVja2VkLz48cmVwTmFtZS8+PGFwcFRhZ0FwcGxpY0xvY2FsaXR5PkJPR09UQSBELkM8L2FwcFRhZ0FwcGxpY0xvY2FsaXR5PjxhcHBUYWdSZXByZXNQdWJsaWNBZG1pbi8+PHBheW1lbnRFeHRyYUluZm8vPjxhcHBUYWdSZXByZXNTdGFpci8+PHNlbGVjdGVkQWN0aW9uPmFjdGlvbi5hY3Rpdml0eS5lbmQ8L3NlbGVjdGVkQWN0aW9uPjx1c3VhcmlvU2VjdGlvbj41PC91c3VhcmlvU2VjdGlvbj48YXBwVGFnQXBwbGljTG9jYWxpdHlJZD4xPC9hcHBUYWdBcHBsaWNMb2NhbGl0eUlkPjxhZG1pbk51bWJlci8+PGRvY1Jlc29sdWNpb25SZXN1ZWx2ZS8+PC9FbGVtZW50PjwvT3BlbmNpdGllcz4=\"\r
+
+    \        }\r
+
+    \    }]\r
+
+    \r
+
+    }"
+scripts:
+  - type: afterResponse
+    code: |
+      pm.test(
+          "Retrieve access token",
+          function() {
+              pm.response.to.have.status(200);
+              const responseJson = pm.response.json();
+              pm.expect(responseJson.authCode).to.be.a("string");
+              pm.collectionVariables.set("authCode", responseJson.authCode);
+              pm.environment.set("auth_code",responseJson.authCode);
+              pm.expect(responseJson.exeCode).to.be.a("string");
+              pm.collectionVariables.set("exeCode", responseJson.exeCode);
+              pm.environment.set("exec_code",responseJson.exeCode);
+
+              console.info('***************************************');
+              console.info('TEST for case 2.- new signature request');
+              console.info('***************************************');
+              console.info('authCode = ' +  pm.collectionVariables.get("authCode"));
+              console.info('exeCode = ' +  pm.collectionVariables.get("exeCode"));
+
+              console.info('URL WHERE END USER MUST BE REDIRECTED');
+              console.info('**************************************');
+              console.info(pm.environment.get("url")+"/oauth2/v1/auth?signature_code="+pm.collectionVariables.get("authCode")+"&scope=signature&client_id="+pm.collectionVariables.get("clientId")+"&redirect_uri="+pm.environment.get("redirect_uri"));
+
+
+          }
+      );
+    language: text/javascript
+order: 4000

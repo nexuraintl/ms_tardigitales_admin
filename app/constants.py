@@ -68,6 +68,23 @@ AUTH_CLIENT_ID: int = int(os.getenv("AUTH_CLIENT_ID", "20060"))
 AUTH_MODULE_NAME: str = os.getenv("AUTH_MODULE_NAME", "TarjetasDigitales")
 AUTH_CACHE_TTL_SECONDS: int = int(os.getenv("AUTH_CACHE_TTL_SECONDS", "60"))
 
+# =============================================================================
+# INTEGRACIÓN FIRMA DIGITAL DESATENDIDA CAMERCLOUD (VIAFIRMA FORTRESS)
+# =============================================================================
+CAMERCLOUD_ENABLED: bool = os.getenv("CAMERCLOUD_ENABLED", "true").lower() in ("true", "1", "yes")
+CAMERCLOUD_BASE_URL: str = os.getenv(
+    "CAMERCLOUD_BASE_URL", "https://camercloud.camerfirma.com/fortress"
+).rstrip("/")
+CAMERCLOUD_CLIENT_ID: str = os.getenv("CAMERCLOUD_CLIENT_ID", "CAMERFIRMACOLOMBIACAMERCLOUD")
+CAMERCLOUD_CLIENT_SECRET: str = os.getenv(
+    "CAMERCLOUD_CLIENT_SECRET", "dad1e8a184d445ac84c17459ceef22dd"
+)
+CAMERCLOUD_REDIRECT_URI: str = os.getenv("CAMERCLOUD_REDIRECT_URI", "*")
+CAMERCLOUD_CERTIFICATE_CODE: str = os.getenv("CAMERCLOUD_CERTIFICATE_CODE", "").strip()
+CAMERCLOUD_CERTIFICATE_PASSWORD: str = os.getenv("CAMERCLOUD_CERTIFICATE_PASSWORD", "").strip()
+CAMERCLOUD_TIMEOUT_SECONDS: int = int(os.getenv("CAMERCLOUD_TIMEOUT_SECONDS", "30"))
+CAMERCLOUD_FALLBACK_UNSIGNED: bool = os.getenv("CAMERCLOUD_FALLBACK_UNSIGNED", "true").lower() in ("true", "1", "yes")
+
 
 
 
