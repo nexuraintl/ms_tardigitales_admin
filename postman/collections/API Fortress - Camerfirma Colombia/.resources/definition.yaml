@@ -1,0 +1,47 @@
+$kind: collection
+id: 2f220a9c-f86c-4c15-a21e-71f616285ed2
+description: |-
+  ## Test de Integración con las APIs de Viafirma Fortress
+
+  - Colección: Camercloud Colombia - Fortress API
+  - Versión: 1.0
+  - Fecha: 10-febrero-2023
+      
+
+  ### Control de Cambios
+
+  - Versión: 1.0 - 10-feb-2023
+      - Primera versión
+
+  ### Proyecto Camercloud Colombia
+
+  La guía oficial de uso del API del producto se encuentra publicada en la siguiente dirección:
+
+  [https://doc.viafirma.com/viafirma-fortress/integration/latest/](https://doc.viafirma.com/viafirma-fortress/integration/latest/)
+
+  En esta colección postman **se acotan los casos de uso identificados para el proyecto de integración** con el objetivo de optimizar los tiempos de la fase de primera integración.
+
+  ### Estructura de la documentación
+
+  Cada caso de uso incorpora una descripción individual con explicación de los métodos y atributos utilizados en cada caso.
+
+  En la descripción de la colección se incluye la versión y fecha, debiendo tenerla en cuenta ante futuros cambios que se soliciten, por ejemplo, para agregar más casos de uso identificados en las necesidades del proyecto.
+
+  ### Uso de datos sensibles
+
+  Se hace uso de variables de colección, que son persistidas automáticamente a partir de las distintas responses obtenidas en cada caso.
+
+  Estas variables de colección pueden ser editadas en las propiedades de la colección.
+
+  IMPORTANTE: no se deben usar datos sensibles o contraseñas reales que puedan ser exportadas en esta colección. El uso de datos privados o sensibles debe configurarse en la columna "CURRENT VALUE", y nunca en la columna "INIT VALUE", siendo esta última la que se exporte junto a sus valores cuando se desee compartir esta colección.
+variables:
+  access_token: ""
+  authCode: ""
+  exeCode: ""
+  signatureCode: ""
+  client_id: PRUEBASJCCNEX
+  client_secret: a5bf3bf32d7d4bef87af44e1f99c964e
+  redirect_uri: "*"
+  url: https://camercloud.camerfirma.com/fortress
+  user_code: ""
+  myExp_reference: CERT-PRUEBA-001

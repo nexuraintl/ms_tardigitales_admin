@@ -1,0 +1,98 @@
+$kind: http-request
+description: |-
+  ### Estado del proceso
+
+  Este método te dará toda la información del proceso de firma asociado al código de autorización obtenido.
+
+
+  ```
+  GET {url}/api/v1/signature/{authCode}/status
+  ```
+
+  #### Response
+
+  Este método devolverá un JSON con toda la información asociada al proceso, incluyendo los datos del 
+  usuario que autorizó la operación, los datos del certificado utilizado para la firma y los datos de la firma, además 
+  de más información detallada de cada uno de los elementos anteriores.
+
+  ```
+  {
+      "authCode": "string",
+      "exeCode": "string",
+      "status": "string",
+      "userCode": "string",
+      "certificate": {
+          "code": "string",
+          "dateIssued": 0,
+          "dateExpired": 0,
+          "serialNumber": "string",
+          "issuer": "string",
+          "subject": "string",
+          "issuerMap": {
+              "C": "string",
+              "OU": "string",
+              "CN": "string",
+              "O": "string"
+          },
+          "subjectMap": {
+              "SURNAME": "string",
+              "C": "string",
+              "SERIALNUMBER": "string",
+              "CN": "string",
+              "GIVENNAME": "string"
+          },
+          "delegated": false,
+          "level": "string",
+          "status": "string",
+          "certificatePassword": false,
+          "passwordErrorCount": 0,
+          "policies": [],
+          "user": {
+              "code": "string",
+              "name": "string",
+              "email": "string",
+              "mobile": "string",
+              "userStatus": "string",
+              "multifactorAuth": false,
+              "authCache": false,
+              "dateActivated": 0,
+              "language": "string",
+              "role": {
+                  "id": "string",
+                  "name": "string",
+                  "description": "string"
+              },
+              "allowDelegations": false,
+              "timezone": "string",
+              "notifyUseLimits": false
+          }
+      },
+      "signatures": [
+          {
+              "ref": "string",
+              "signatureCode": "string",
+              "status": "string"
+          }
+      ]
+  }
+  ```
+url: "{{url}}/api/v1/signature/{{authCode}}/status"
+method: GET
+headers:
+  Authorization: Bearer {{access_token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: ""
+scripts:
+  - type: afterResponse
+    code: |-
+      let jsonData = pm.response.json();
+
+      console.info('**********************************');
+      console.info('TEST for case 4.- signature status');
+      console.info('**********************************');
+      console.info('signatureCode = ' + jsonData.status);
+    language: text/javascript
+settings: {}
+order: 7000
