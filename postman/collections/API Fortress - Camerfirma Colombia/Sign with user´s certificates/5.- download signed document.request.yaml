@@ -1,0 +1,66 @@
+$kind: http-request
+description: |-
+  ### Descargar documento firmado
+
+  Aunque el documento firmado es obtenido en la response del método ```/api/v1/signature/{exeCode}/execute```, podrás 
+  hacer uso de este otro método que te permitirá descargar el documento firmado, siempre y cuando no haya vencido 
+  el período de retención definido en la configuración del grupo propietario.
+
+
+  ```
+  GET {url}/api/v1/signature/{signatureCode}
+  ```
+
+  #### Response
+
+  Este método devolverá un JSON con la siguiente estructura.
+
+  ```
+  {
+      "name": "string",
+      "url": "string",
+      "digest": "string",
+      "bytesB64": "string"
+  }
+  ```
+
+  #### Response Error
+
+  Los errores asociados a la descarga de documentos serán devueltos con la siguiente estructura.
+
+  ```
+  {
+      "error": "signature_error",
+      "error_description": "Unable to retrieve signed document"
+  }
+  ```
+
+  NOTA: online decoder b64 to file 
+
+  https://base64.guru/converter/decode/file
+url: "{{url}}/api/v1/signature/{{signatureCode}}"
+method: GET
+headers:
+  Authorization: Bearer {{access_token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: ""
+scripts:
+  - type: afterResponse
+    code: |+
+      let jsonData = pm.response.json();
+
+      console.info('******************************************');
+      console.info('TEST for case 5.- download signed document');
+      console.info('******************************************');
+      console.info('name = ' + jsonData.name);
+      console.info('url = ' + jsonData.url);
+      console.info('digest = ' + jsonData.digest);
+      console.info('digest = ' + jsonData.digest);
+      console.info('----');
+      console.info('En este link puedes convertir el b64 en PDF: https://base64.guru/converter/decode/file');
+
+    language: text/javascript
+settings: {}
+order: 8000

@@ -1,0 +1,78 @@
+$kind: http-request
+description: |-
+  ### Documento pasado como referencia URL
+
+  mismo caso de uso pero pasando el documento que debe ser firmado mediante referencia url.
+
+  ```
+  "document": {
+     "name": "mycontract_signed.pdf",
+     "url": "{{pdf_url_sample}}"
+   ```
+url: "{{url}}/api/v1/signature"
+method: POST
+headers:
+  Authorization: Bearer {{access_token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: "{\r
+
+    \    \"redirectUri\": \"{{redirect_uri}}\",\r
+
+    \    \"signatureConfigurations\": [{\r
+
+    \        \"userCode\" : \"{{user_code}}\",\r
+
+    \        \"ref\" : \"{{myExp_reference}}\",\r
+
+    \        \"signatureType\": \"PADES_B\",\r
+
+    \        \"signatureAlgorithm\": \"RSA_SHA256\",\r
+
+    \        \"packaging\": \"ENVELOPED\",\r
+
+    \        \"document\": {\r
+
+    \            \"name\": \"contrato.pdf\",\r
+
+    \            \"url\": \"{{pdf_url_sample}}\"\r
+
+    \        },\r
+
+    \        \"padesConfiguration\": {\r
+
+    \            \"stamper\": {\r
+
+    \                \"page\": 1,\r
+
+    \                \"type\": \"QR_BARCODE128\",\r
+
+    \                \"xAxis\": 80,\r
+
+    \                \"yAxis\": 700,\r
+
+    \                \"timeZoneId\": \"Europe/Madrid\"\r
+
+    \            }\r
+
+    \        }\r
+
+    \    }]\r
+
+    \r
+
+    }"
+scripts:
+  - type: afterResponse
+    code: |+
+      let jsonData = pm.response.json();
+      pm.collectionVariables.set("authCode", jsonData["authCode"]);
+      pm.collectionVariables.set("exeCode", jsonData["exeCode"]);
+
+      console.info('URL WHERE END USER MUST BE REDIRECTED');
+      console.info('**************************************');
+      console.info(pm.collectionVariables.get("url")+"/oauth2/v1/auth?signature_code="+pm.collectionVariables.get("authCode")+"&scope=signature&client_id="+pm.collectionVariables.get("clientId")+"&redirect_uri="+pm.collectionVariables.get("redirect_uri"))
+
+    language: text/javascript
+order: 5000
