@@ -47,26 +47,19 @@ async def obtener_detalle(n_certificado: str = Path(..., description="Número ú
     dependencies=[Depends(require_permission(PERMISSIONS.CERT_DESCARGAR))],
 )
 async def descargar_pdf(n_certificado: str = Path(..., description="Número único de certificado")):
-    cert = await certificados_service.obtener_por_numero(n_certificado)
-    if not cert:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Certificado no encontrado")
-    
-    config_inst = await certificados_service.repo.get_configuracion_institucional()
-    if "nombre_director" not in cert and config_inst.get("nombre_director"):
-        cert["nombre_director"] = config_inst["nombre_director"]
-    if "cargo_director" not in cert and config_inst.get("cargo_director"):
-        cert["cargo_director"] = config_inst["cargo_director"]
-    if "firma_director" not in cert and config_inst.get("firma_director"):
-        cert["firma_director"] = config_inst["firma_director"]
+    pdf_bytes, origen_doc, sig_code = await certificados_service.obtener_pdf_certificado(n_certificado)
+    headers = {
+        "Content-Disposition": f'attachment; filename="certificado-{n_certificado}.pdf"',
+        "X-Numero-Certificado": n_certificado,
+        "X-Origen-Documento": origen_doc,
+        "X-Firma-Camercloud": "FIRMADO" if sig_code else "PENDIENTE",
+    }
+    if sig_code:
+        headers["X-Signature-Code"] = str(sig_code)
 
-    pdf_bytes = certificado_pdf_service.generar_pdf(cert)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={
-            "Content-Disposition": f'attachment; filename="certificado-{n_certificado}.pdf"',
-            "X-Numero-Certificado": n_certificado,
-            "X-Origen-Documento": "ALMACENADO"
-        }
+        headers=headers,
     )
 

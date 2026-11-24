@@ -1,0 +1,109 @@
+$kind: http-request
+description: |-
+  ### EJECTUAR FIRMA AUTORIZADA
+
+  Cuando el usuario final accede a la URL de autorización de firma, descrita en el método anterior, 
+  y finalmente autoriza el uso de su certificado, el sistema hace un REDIRECT a la URL previamente 
+  informada en la solicitud de firma.
+
+  En esta URL el sistema integrado debe procesar la request para confirmar la operación, y por tanto, 
+  poder ejecutar la firma.
+
+  Para ello hará uso del siguiente método:
+
+  ```
+  POST /api/v1/signature/{{exeCode}}/execute
+  ```
+
+  donde vamos a necesitar el ``exeCode``` obtenido previamente durante la autorización.
+
+
+  #### Response
+
+  Como respuesta obtendremos un JSON con la siguiente estructura.
+
+  ```
+  [
+      {
+          "ref": "string",
+          "signatureCode": "string",
+          "mimeType": "string",
+          "status": "string",
+          "bytesB64": "string"
+      }
+  ]
+  ```
+
+  Donde:
+
+  * **ref**: (opcional) en caso de haber informado una referencia externa en la request, ésta también será devuelta en la respuesta del proceso de firma
+  * **signatureCode**: identificador único asociado a la firma del documento. Será necesario para futuras descargas mediante API.
+  * **status**: estado del proceso de firma, si todo OK el estado debe ser 'COMPLETED'
+  * **bytesB64**: documento firmado codificado en base64
+
+  Ejemplo:
+
+  ```
+  [
+      {
+          "ref": "000010001",
+          "signatureCode": "H05Z-8OAG-OF1O-TB03-W165-3501-1896-84",
+          "mimeType": "PDF",
+          "status": "COMPLETED",
+          "bytesB64": "JVBERi...=="
+      }
+  ]
+  ```
+
+
+  #### Response Error
+
+  Los errores asociados a autorizaciones no válidas se devolverán con la siguiente estructura.
+
+  ```
+  {
+      "error": "not_authorized_signature",
+      "error_description": "Unauthorized signature request."
+  }
+  ```
+url: "{{url}}/api/v1/signature/{{exeCode}}/execute"
+method: POST
+headers:
+  - key: Cache-Control
+    value: no-cache
+  - key: Postman-Token
+    value: <calculated when request is sent>
+  - key: Content-Type
+    value: application/json
+  - key: Content-Length
+    value: <calculated when request is sent>
+  - key: Host
+    value: <calculated when request is sent>
+  - key: User-Agent
+    value: PostmanRuntime/7.39.1
+  - key: Accept
+    value: "*/*"
+  - key: Accept-Encoding
+    value: gzip, deflate, br
+  - key: Connection
+    value: keep-alive
+  - key: Authorization
+    value: Bearer {{access_token}}
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: "{}"
+scripts:
+  - type: afterResponse
+    code: |-
+      let jsonData = pm.response.json();
+      pm.collectionVariables.set("signatureCode", jsonData[0].signatureCode);
+
+
+      console.info('***********************************');
+      console.info('TEST for case 3.- execute signature');
+      console.info('************************************');
+      console.info('signatureCode = ' + jsonData[0].signatureCode);
+    language: text/javascript
+order: 6000

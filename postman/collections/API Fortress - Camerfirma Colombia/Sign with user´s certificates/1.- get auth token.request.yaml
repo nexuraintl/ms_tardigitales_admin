@@ -1,0 +1,94 @@
+$kind: http-request
+description: |-
+  ## Seguridad OAuth 2.0 Access Token
+
+  El API está securizada con OAuth 2.0, y con este método podrás obtener el access token necesario para consumir los métodos de firma disponibles en el API.
+
+  Para ello vas a necesitar:
+
+  * clientId
+  * clientSecret
+
+  Ambos datos son gestionados desde el dashboard de Fortress, en la configuración de Sistemas Clientes.
+
+  * redirect_uri
+
+  El sistema comprobará que la URL a la que vamos a redirigir al usuario final está previamente autorizada. Esta autorización de igual forma se gestiona desde el dashboard de Fortress, en la configuración del sistema cliente.
+
+  Por ejemplo:
+
+  ```
+  https://mysystem.com/responseSignature
+  ```
+  también se permiten patrones como el siguiente:
+
+  ```
+  *.mysystem.com
+  https://mysystem.com/*
+  ```
+  o bien permitir cualquier URL de retorno (recomendado solo para entornos de pruebas):
+  ```
+  *
+  ```
+
+  * grant_type
+
+  Define el ámbito de uso del token. Para el caso de uso de firmas con certificados de usuario el grant_type debe ser **client_credentials**.
+
+  ### Uso del método
+
+  POST {url}/oauth2/v1/token
+
+  Body contentType/form-data
+
+  pasando los siguientes atributos:
+
+  ```
+  client_id="string"
+  client_secret="string"
+  redirect_uri="string"
+  grant_type="string"
+  ```
+
+  ### Response
+
+  Repuestas 200 OK con el siguiente contentType/JSON en el body:
+
+  ```json
+  {
+      "access_token": "string",
+      "token_type": "Bearer",
+      "expires_in": 0
+  }
+  ```
+
+  Para el uso de los siguientes métodos del API necesitaremos el ```access_token```obtenido en la response.
+
+  En esta colección postman de ejemplo, lo guardamos automáticamente en la variable de la colección ```access_token```.
+url: "{{url}}/oauth2/v1/token"
+method: POST
+body:
+  type: formdata
+  content:
+    - type: text
+      key: client_id
+      value: "{{client_id}}"
+    - type: text
+      key: client_secret
+      value: "{{client_secret}}"
+    - type: text
+      key: redirect_uri
+      value: "{{redirect_uri}}"
+    - type: text
+      key: grant_type
+      value: client_credentials
+scripts:
+  - type: afterResponse
+    code: |-
+      let jsonData = pm.response.json();
+      if (jsonData && jsonData["access_token"]) {
+          pm.environment.set("access_token", jsonData["access_token"]);
+          pm.collectionVariables.set("access_token", jsonData["access_token"]);
+      }
+    language: text/javascript
+order: 1000

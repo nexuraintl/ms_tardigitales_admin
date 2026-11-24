@@ -1,6 +1,46 @@
+import base64
 import json
 from typing import List, Dict, Any, Optional
 from app.core.database import get_client_connection
+
+
+def _encode_pdf_blob(pdf_bytes: Optional[bytes]) -> Optional[str]:
+    """Codifica el PDF a texto ASCII Base64 para evitar el bug escape_bytes_prefixed de aiomysql."""
+    if not pdf_bytes:
+        return None
+    if isinstance(pdf_bytes, (bytes, bytearray)):
+        return base64.b64encode(bytes(pdf_bytes)).decode("ascii")
+    if isinstance(pdf_bytes, str):
+        return pdf_bytes.strip() or None
+    return None
+
+
+def _decode_pdf_blob(raw: Any) -> Optional[bytes]:
+    """Decodifica contenido_pdf desde Base64 ASCII o bytes PDF crudos."""
+    if not raw:
+        return None
+    if isinstance(raw, memoryview):
+        raw = raw.tobytes()
+    if isinstance(raw, (bytes, bytearray)):
+        b = bytes(raw)
+        if b.startswith(b"%PDF"):
+            return b
+        try:
+            decoded = base64.b64decode(b)
+            if decoded.startswith(b"%PDF"):
+                return decoded
+        except Exception:
+            pass
+        return b
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return None
+        try:
+            return base64.b64decode(s)
+        except Exception:
+            return None
+    return None
 
 class CertificadosRepository:
     def __init__(self):
@@ -74,13 +114,20 @@ class CertificadosRepository:
         finally:
             conn.close()
 
-    async def get_by_n_certificado(self, n_certificado: str, client_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    async def get_by_n_certificado(
+        self,
+        n_certificado: str,
+        client_id: Optional[int] = None,
+        include_pdf: bool = False,
+    ) -> Optional[Dict[str, Any]]:
         conn = await get_client_connection(client_id)
         try:
             async with conn.cursor() as cur:
-                sql = """
+                pdf_col = ", contenido_pdf" if include_pdf else ""
+                sql = f"""
                     SELECT id, client_id, n_certificado, tipo, documento, nombre_titular, 
-                           fecha_generacion, fecha_firma_onac, estado, payload_detalles, origen, ruta_pdf, hash_sha256
+                           fecha_generacion, fecha_firma_onac, estado, payload_detalles, origen,
+                           ruta_pdf, hash_sha256, signature_code, auth_code{pdf_col}
                     FROM tn_tarjetavirtual_certificados_expedidos
                     WHERE n_certificado = %s
                     LIMIT 1
@@ -92,7 +139,7 @@ class CertificadosRepository:
                 
                 raw_detalles = row[9]
                 detalles = json.loads(raw_detalles) if isinstance(raw_detalles, str) else (raw_detalles or {})
-                return {
+                result = {
                     "id": str(row[0]),
                     "client_id": row[1],
                     "n_certificado": row[2],
@@ -105,8 +152,13 @@ class CertificadosRepository:
                     "payload_detalles": detalles,
                     "origen": row[10],
                     "ruta_pdf": row[11],
-                    "hash_sha256": row[12]
+                    "hash_sha256": row[12],
+                    "signature_code": row[13],
+                    "auth_code": row[14],
                 }
+                if include_pdf:
+                    result["pdf_bytes"] = _decode_pdf_blob(row[15])
+                return result
         finally:
             conn.close()
 
@@ -116,15 +168,20 @@ class CertificadosRepository:
             async with conn.cursor() as cur:
                 sql = """
                     INSERT INTO tn_tarjetavirtual_certificados_expedidos
-                    (client_id, n_certificado, tipo, documento, nombre_titular, fecha_generacion, fecha_firma_onac, estado, payload_detalles, origen, ruta_pdf, hash_sha256)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (client_id, n_certificado, tipo, documento, nombre_titular, fecha_generacion,
+                     fecha_firma_onac, estado, payload_detalles, origen, ruta_pdf, hash_sha256,
+                     signature_code, auth_code, contenido_pdf)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                     nombre_titular = VALUES(nombre_titular),
-                    fecha_firma_onac = VALUES(fecha_firma_onac),
+                    fecha_firma_onac = COALESCE(VALUES(fecha_firma_onac), fecha_firma_onac),
                     estado = VALUES(estado),
                     payload_detalles = VALUES(payload_detalles),
                     ruta_pdf = VALUES(ruta_pdf),
                     hash_sha256 = VALUES(hash_sha256),
+                    signature_code = COALESCE(VALUES(signature_code), signature_code),
+                    auth_code = COALESCE(VALUES(auth_code), auth_code),
+                    contenido_pdf = COALESCE(VALUES(contenido_pdf), contenido_pdf),
                     updated_at = NOW()
                 """
                 params = (
@@ -139,10 +196,36 @@ class CertificadosRepository:
                     json.dumps(data.get("payload_detalles", {})),
                     data.get("origen", "GENERADO"),
                     data.get("ruta_pdf"),
-                    data.get("hash_sha256")
+                    data.get("hash_sha256"),
+                    data.get("signature_code"),
+                    data.get("auth_code"),
+                    _encode_pdf_blob(data.get("pdf_bytes")),
                 )
                 await cur.execute(sql, params)
                 return cur.lastrowid
+        finally:
+            conn.close()
+
+    async def actualizar_contenido_pdf(
+        self,
+        n_certificado: str,
+        pdf_bytes: bytes,
+        client_id: Optional[int] = None,
+    ) -> None:
+        encoded = _encode_pdf_blob(pdf_bytes)
+        if not encoded:
+            return
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    UPDATE tn_tarjetavirtual_certificados_expedidos
+                    SET contenido_pdf = %s, updated_at = NOW()
+                    WHERE n_certificado = %s
+                    """,
+                    (encoded, n_certificado),
+                )
         finally:
             conn.close()
 
