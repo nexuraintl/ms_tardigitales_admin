@@ -52,6 +52,11 @@ class NotificacionesService:
         try:
             data = payload.dict()
             data["client_id"] = cid
+            destinatarios_reales = await self.repository.count_tarjetas_activas_por_audiencia(
+                audiencia=data.get("audiencia", "Todos"),
+                client_id=cid,
+            )
+            data["destinatarios"] = destinatarios_reales
 
             notif_id = await self.repository.create_notificacion(data, cid)
             return {
@@ -61,7 +66,8 @@ class NotificacionesService:
                     "id": notif_id,
                     "titulo": payload.titulo,
                     "canal": payload.canal,
-                    "estado": payload.estado
+                    "estado": payload.estado,
+                    "destinatarios": destinatarios_reales,
                 }
             }
         except Exception as e:
