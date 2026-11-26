@@ -93,7 +93,7 @@ class JccClient:
         start_time = time.perf_counter()
 
         try:
-            async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
+            async with httpx.AsyncClient(timeout=60.0, verify=False) as client:
                 response = await client.post(url, json=payload, headers=headers)
 
             duracion_ms = int((time.perf_counter() - start_time) * 1000)
@@ -202,6 +202,7 @@ class JccClient:
 
         except Exception as e:
             duracion_ms = int((time.perf_counter() - start_time) * 1000)
+            err_detail = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
             try:
                 await self.auditoria.registrar(
                     client_id=resolved_client_id,
@@ -210,7 +211,7 @@ class JccClient:
                     metodo="POST",
                     url=url,
                     parametros_peticion=payload,
-                    cuerpo_respuesta={"error_conexion": str(e)},
+                    cuerpo_respuesta={"error_conexion": err_detail},
                     duracion_ms=duracion_ms,
                     codigo_http=502
                 )
@@ -221,7 +222,7 @@ class JccClient:
                 "encontrado": False,
                 "es_error_conexion": True,
                 "data": None,
-                "error": f"Error de conexión con la API de la JCC (posible VPN inactiva o servicio inaccesible): {str(e)}"
+                "error": f"Error de conexión con la API de la JCC (posible VPN inactiva o servicio inaccesible): {err_detail}"
             }
 
     async def consultar_all(
@@ -265,7 +266,7 @@ class JccClient:
         start_time = time.perf_counter()
 
         try:
-            async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
+            async with httpx.AsyncClient(timeout=60.0, verify=False) as client:
                 response = await client.post(url, json=payload, headers=headers)
 
             duracion_ms = int((time.perf_counter() - start_time) * 1000)
