@@ -30,41 +30,46 @@ class CertificadosService:
         is_contador = tipo_raw == "contador"
         detalles = record.get("payload_detalles") or {}
         
+        def _as_str(val: Any) -> Optional[str]:
+            if val is None or val == "":
+                return None
+            return str(val)
+
         # Antecedentes
         raw_antecedentes = detalles.get("ANTECEDENTES") or []
         formatted_antecedents = []
         for ant in raw_antecedentes:
             formatted_antecedents.append({
-                "sanctionType": ant.get("SAN_TIPO") or "",
+                "sanctionType": str(ant.get("SAN_TIPO") or ""),
                 "durationMonths": ant.get("SAN_MESES"),
-                "resolutionNumber": ant.get("SAN_RESOLUCION") or "",
-                "resolutionDate": ant.get("SAN_FECHA_RESOLUCION") or "",
-                "enforcementDate": ant.get("SAN_FECHA_EJECUTORIA") or "",
-                "completionDate": ant.get("SAN_FECHA_FIN")
+                "resolutionNumber": str(ant.get("SAN_RESOLUCION") or ""),
+                "resolutionDate": str(ant.get("SAN_FECHA_RESOLUCION") or ""),
+                "enforcementDate": str(ant.get("SAN_FECHA_EJECUTORIA") or ""),
+                "completionDate": _as_str(ant.get("SAN_FECHA_FIN"))
             })
 
         # Formateo de fechas
-        gen_at = record.get("fecha_generacion") or ""
-        firm_at = record.get("fecha_firma_onac")
+        gen_at = str(record.get("fecha_generacion") or "")
+        firm_at = _as_str(record.get("fecha_firma_onac"))
 
         return {
             "id": f"{tipo_raw}-{record.get('n_certificado')}",
             "type": "Contador" if is_contador else "Sociedad",
-            "certificateNumber": record.get("n_certificado", ""),
-            "identifier": record.get("documento", ""),
-            "holder": record.get("nombre_titular", ""),
+            "certificateNumber": str(record.get("n_certificado") or ""),
+            "identifier": str(record.get("documento") or ""),
+            "holder": str(record.get("nombre_titular") or ""),
             "generatedAt": gen_at,
             "signedAt": firm_at,
-            "status": record.get("estado", "ACTIVO"),
-            "professionalCard": detalles.get("CON_NRO_TARJETA") if is_contador else None,
-            "cardType": detalles.get("CON_TIPO_TARJETA") if is_contador else None,
-            "documentMunicipality": detalles.get("MUNICIPIO_DOCUMENTO") if is_contador else None,
-            "documentDepartment": detalles.get("DEPARTAMENTO_DOCUMENTO") if is_contador else None,
-            "companyCode": str(detalles.get("SOC_CODIGO")) if not is_contador and detalles.get("SOC_CODIGO") else None,
-            "legalRepresentative": detalles.get("SOC_REPRESENTANTE_LEGAL") if not is_contador else None,
-            "municipality": detalles.get("MUNICIPIO") if not is_contador else None,
-            "department": detalles.get("DEPARTAMENTO") if not is_contador else None,
-            "updatedAt": detalles.get("CON_FECHA_ACTUALIZACION") or detalles.get("SOC_FECHA_ACTUALIZACION") or gen_at,
+            "status": str(record.get("estado") or "ACTIVO"),
+            "professionalCard": _as_str(detalles.get("CON_NRO_TARJETA")) if is_contador else None,
+            "cardType": _as_str(detalles.get("CON_TIPO_TARJETA")) if is_contador else None,
+            "documentMunicipality": _as_str(detalles.get("MUNICIPIO_DOCUMENTO")) if is_contador else None,
+            "documentDepartment": _as_str(detalles.get("DEPARTAMENTO_DOCUMENTO")) if is_contador else None,
+            "companyCode": _as_str(detalles.get("SOC_CODIGO")) if not is_contador else None,
+            "legalRepresentative": _as_str(detalles.get("SOC_REPRESENTANTE_LEGAL")) if not is_contador else None,
+            "municipality": _as_str(detalles.get("MUNICIPIO")) if not is_contador else None,
+            "department": _as_str(detalles.get("DEPARTAMENTO")) if not is_contador else None,
+            "updatedAt": str(detalles.get("CON_FECHA_ACTUALIZACION") or detalles.get("SOC_FECHA_ACTUALIZACION") or gen_at),
             "antecedents": formatted_antecedents
         }
 
