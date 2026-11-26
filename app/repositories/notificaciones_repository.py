@@ -71,6 +71,35 @@ class NotificacionesRepository:
         finally:
             conn.close()
 
+    async def count_tarjetas_activas_por_audiencia(
+        self,
+        audiencia: Optional[str] = "Todos",
+        client_id: Optional[int] = None
+    ) -> int:
+        """Cuenta las tarjetas digitales en estado Activa según la audiencia objetivo."""
+        aud = (audiencia or "Todos").strip().lower()
+        conn = await get_client_connection(client_id)
+        try:
+            async with conn.cursor() as cursor:
+                total = 0
+                if aud in ("contadores", "contador", "todos", ""):
+                    await cursor.execute(
+                        "SELECT COUNT(*) FROM tn_tarjetavirtual_contadores WHERE UPPER(TRIM(estado)) = 'ACTIVA'"
+                    )
+                    row = await cursor.fetchone()
+                    total += int(row[0]) if row and row[0] else 0
+
+                if aud in ("sociedades", "sociedad", "todos", ""):
+                    await cursor.execute(
+                        "SELECT COUNT(*) FROM tn_tarjetavirtual_sociedades WHERE UPPER(TRIM(estado)) = 'ACTIVA'"
+                    )
+                    row = await cursor.fetchone()
+                    total += int(row[0]) if row and row[0] else 0
+
+                return total
+        finally:
+            conn.close()
+
     async def create_notificacion(
         self,
         data: Dict[str, Any],
