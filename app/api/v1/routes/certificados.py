@@ -29,6 +29,33 @@ async def listar_certificados(
     )
     return result
 
+@router.post(
+    "/procesar",
+    deprecated=True,
+    summary="[DEPRECADO] Recepción y procesamiento de certificados desde MyJCC (migrar a /user/certificados/procesar)",
+)
+async def procesar_certificado_deprecated(req: ProcesarCertificadoRequest):
+    data = req.dict()
+    guardado = await certificados_service.procesar_solicitud_myjcc(data)
+    pdf_bytes = guardado.get("pdf_bytes") or certificado_pdf_service.generar_pdf(data)
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="certificado-{req.N_CERTIFICADO}.pdf"',
+        "X-Numero-Certificado": req.N_CERTIFICADO,
+        "X-Origen-Documento": guardado.get("origen", "GENERADO"),
+        "X-Firma-Camercloud": "FIRMADO" if guardado.get("signature_code") else "PENDIENTE",
+        "Deprecation": "true",
+        "X-Successor-Endpoint": "/apig/tardigitales/user/certificados/procesar",
+    }
+    if guardado.get("signature_code"):
+        headers["X-Signature-Code"] = str(guardado["signature_code"])
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers=headers,
+    )
+
 @router.get(
     "/{n_certificado}",
     response_model=CertificadoItemResponse,
