@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Query, Path, Body, status
+import os
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Path, Body, status
 from typing import List, Dict, Any, Optional
 from app.services.notificaciones_service import NotificacionesService
 from app.schemas.notificaciones_schema import NotificacionCreateSchema
@@ -58,6 +59,38 @@ async def create_notificacion(
     """
     cid = client_id or payload.client_id or DEFAULT_CLIENT_ID
     return await service.create_notificacion(payload, cid)
+
+@router.post(
+    "/sincronizar-topics",
+    dependencies=[Depends(require_permission(PERMISSIONS.NOTIF_NUEVA))],
+)
+async def sincronizar_topics_fcm(
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente")
+):
+    """
+    Sincroniza (backfill) todos los tokens FCM activos en BD hacia los topics
+    jcc_todos, jcc_contadores y jcc_sociedades.
+    """
+    cid = client_id or DEFAULT_CLIENT_ID
+    return await service.sincronizar_topics_dispositivos(cid)
+
+@router.post("/procesar-programadas")
+async def procesar_notificaciones_programadas(
+    client_id: Optional[int] = Query(None, description="ID de la entidad cliente"),
+    x_scheduler_secret: Optional[str] = Header(None, alias="X-Scheduler-Secret"),
+):
+    """
+    Endpoint invocado periódicamente por Google Cloud Scheduler para despachar
+    notificaciones programadas vencidas respetando rango horario, max_diario y recurrencias.
+    """
+    expected_secret = (os.getenv("SCHEDULER_SECRET") or "").strip()
+    if expected_secret and x_scheduler_secret != expected_secret:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Header X-Scheduler-Secret inválido o ausente.",
+        )
+    cid = client_id or DEFAULT_CLIENT_ID
+    return await service.procesar_notificaciones_programadas(cid)
 
 @router.get(
     "/{id}",
