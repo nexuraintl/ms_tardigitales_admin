@@ -11,3 +11,4 @@ qrcode[pil]>=8.0.0
 pillow>=10.0.0
 pypdf>=6.0.0
 svglib>=2.3.0
+firebase-admin>=6.6.0
